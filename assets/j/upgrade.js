@@ -23,15 +23,15 @@ if(typeof(OpenVBX) == "undefined") {
 }
 
 
-OpenVBX.Installer = {
+OpenVBX.Upgrader = {
 	tabsDisabled: true,
 	ready : false,
 	currentStep : 1,
 	validate : function(afterValidation) {
-		var step = $('#step-'+OpenVBX.Installer.currentStep);
+		var step = $('#step-'+OpenVBX.Upgrader.currentStep);
 		var params = $('textarea, input, select', step);
 		var result = $.ajax({
-			url : OpenVBX.home + 'install/validate',
+			url : OpenVBX.home + 'upgrade/validate',
 			data : params,
 			success : function(data) {
 				$('.invalid').removeClass('invalid');
@@ -39,11 +39,11 @@ OpenVBX.Installer = {
 					$('.error').text(data.message);
 					$('.error').slideDown();
 					for(var a in data.errors) {
-						$('#'+a+'-'+OpenVBX.Installer.currentStep).addClass('invalid');
+						$('#'+a+'-'+OpenVBX.Upgrader.currentStep).addClass('invalid');
 					}
 				} else {
-					if(OpenVBX.Installer.currentStep == 5) {
-						OpenVBX.Installer.ready = true;
+					if(OpenVBX.Upgrader.currentStep == 1) {
+						OpenVBX.Upgrader.ready = true;
 					}
 					
 					afterValidation();
@@ -65,45 +65,45 @@ OpenVBX.Installer = {
 			e.preventDefault();
 		}
 
-		if(OpenVBX.Installer.prevStepLock)
+		if(OpenVBX.Upgrader.prevStepLock)
 			return false;
 
-		OpenVBX.Installer.prevStepLock = true;
+		OpenVBX.Upgrader.prevStepLock = true;
 		if($('.steps').css('left').replace('px','') > -700)
 			return false;
 
 		$('.error').slideUp();
-		OpenVBX.Installer.currentStep -= 1;
-		OpenVBX.Installer.gotoStep(OpenVBX.Installer.currentStep);
+		OpenVBX.Upgrader.currentStep -= 1;
+		OpenVBX.Upgrader.gotoStep(OpenVBX.Upgrader.currentStep);
 
 		return false;
 	},
 	nextStep : function(e) {
-		OpenVBX.Installer.tabsDisabled = false;
+		OpenVBX.Upgrader.tabsDisabled = false;
 		if(typeof(e) != "undefined") {
 			e.preventDefault();
 		}
 
-		if(OpenVBX.Installer.nextStepLock)
+		if(OpenVBX.Upgrader.nextStepLock)
 			return false;
 
 		var afterValidation = function() {
 			
-			OpenVBX.Installer.nextStepLock = true;
+			OpenVBX.Upgrader.nextStepLock = true;
 			if($('.steps').css('left').replace('px','') <= -3500)
 				return false;
 			
 			$('.error').slideUp();
-			OpenVBX.Installer.currentStep += 1;
-			if(OpenVBX.Installer.currentStep == 6 && OpenVBX.Installer.ready) {
-				OpenVBX.Installer.submit(e);
+			OpenVBX.Upgrader.currentStep += 1;
+			if(OpenVBX.Upgrader.currentStep == 2 && OpenVBX.Upgrader.ready) {
+				OpenVBX.Upgrader.submit(e);
 			} else {
-				OpenVBX.Installer.gotoStep(OpenVBX.Installer.currentStep);
+				OpenVBX.Upgrader.gotoStep(OpenVBX.Upgrader.currentStep);
 			}
 
 		};
 
-		OpenVBX.Installer.validate(afterValidation);
+		OpenVBX.Upgrader.validate(afterValidation);
 
 		return false;
 	},
@@ -119,33 +119,24 @@ OpenVBX.Installer = {
 		} else {
 			$('button.next').removeAttr('disabled');
 		}
-		switch(OpenVBX.Installer.currentStep) {
+		switch(OpenVBX.Upgrader.currentStep) {
 			case 1:
 				$('button.prev').hide();
-				$('button.next').show();
-				$('button.submit').hide();
-			break;
-			default:
-				$('button.prev').show();
-				$('button.next').show();
-				$('button.submit').hide();
-				break;
-			case 5:
 				$('button.next').hide();
 				$('button.submit').show();
-				break;
-			case 6:
+			break;
+			case 2:
 				$('button').hide();
 				break;
 		}
 
-		OpenVBX.Installer.nextStepLock = false;
-		OpenVBX.Installer.prevStepLock = false;
+		OpenVBX.Upgrader.nextStepLock = false;
+		OpenVBX.Upgrader.prevStepLock = false;
 	},
 	gotoStep : function(step) {
 		var left = (step * -700) + 700;
-		$('.steps').animate({'left': left}, 'normal', 'swing', OpenVBX.Installer.setButtons);
-		OpenVBX.Installer.currentStep = step;
+		$('.steps').animate({'left': left}, 'normal', 'swing', OpenVBX.Upgrader.setButtons);
+		OpenVBX.Upgrader.currentStep = step;
 	},
 	toggleError : function() {
 		$('.error').slideToggle();
@@ -155,18 +146,18 @@ OpenVBX.Installer = {
 			e.preventDefault();
 		}
 
-		if(OpenVBX.Installer.ready)
+		if(OpenVBX.Upgrader.ready)
 		{
 			$.ajax({
-				url : OpenVBX.home + '/install/setup',
+				url : OpenVBX.home + 'upgrade/setup',
 				data : $('form input, form select, form textarea'),
 				success : function(data) {
 					if(!data.success) {
 						$('.error')
-							.text(data.error)
+							.text(data.message)
 							.slideDown();
 					} else {
-						OpenVBX.Installer.gotoStep(6);
+						OpenVBX.Upgrader.gotoStep(2);
 					}
 				},
 				type : 'post',
@@ -185,15 +176,15 @@ OpenVBX.Installer = {
 
 $(document).ready(function() {
 	if($('.error').text() != '') {
-		setTimeout(OpenVBX.Installer.toggleError, 
+		setTimeout(OpenVBX.Upgrader.toggleError, 
 				   1000);
 	}
 	
-	OpenVBX.Installer.setButtons();
-	$('button.next').click(OpenVBX.Installer.nextStep);
-	$('button.prev').click(OpenVBX.Installer.prevStep);
-	$('.error').click(OpenVBX.Installer.toggleError);
-	$('button.submit').click(OpenVBX.Installer.nextStep);
+	OpenVBX.Upgrader.setButtons();
+	$('button.next').click(OpenVBX.Upgrader.nextStep);
+	$('button.prev').click(OpenVBX.Upgrader.prevStep);
+	$('.error').click(OpenVBX.Upgrader.toggleError);
+	$('button.submit').click(OpenVBX.Upgrader.nextStep);
 	$('form').submit(function(e) {
 		e.preventDefault();
 	});
@@ -205,7 +196,7 @@ $(document).ready(function() {
 				  var keyCode = e.keyCode || e.which; 
 				  if(keyCode == 9) {
 					  e.preventDefault();
-					  OpenVBX.Installer.nextStep();
+					  OpenVBX.Upgrader.nextStep();
 				  }
 			  });
 	});
@@ -221,7 +212,7 @@ $(document).ready(function() {
 		   && e.which == 9 && last_key != 16)
 			e.preventDefault();
 
-		if(OpenVBX.Installer.tabsDisabled && e.which == 9)
+		if(OpenVBX.Upgrader.tabsDisabled && e.which == 9)
 			e.preventDefault();
 		last_key = e.which;
 	});
