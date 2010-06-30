@@ -83,6 +83,6 @@ $route['dialog'] = "dialog";
 $route['client'] = "client";
 $route['devices'] = "devices";
 $route['voicemail'] = "voicemail";
-
+$route['hook/(:any)'] = "hook/index/$1";
 /* End of file routes.php */
 /* Location: ./system/application/config/routes.php */
