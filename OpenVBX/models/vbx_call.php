@@ -115,13 +115,17 @@ class VBX_Call extends Model {
 		{
 			throw new VBX_CallException($e->getMessage());
 		}
+
+		$callerid = PhoneNumber::normalizePhoneNumberToE164($callerid);
+		$from = PhoneNumber::normalizePhoneNumberToE164($from);
+		$to = PhoneNumber::normalizePhoneNumberToE164($to);
 		
 		$twilio = new TwilioRestClient($this->twilio_sid,
 									   $this->twilio_token,
 									   $this->twilio_endpoint);
 		
-		$recording_url = site_url("twiml/dial/$callerid/$to/$rest_access");
-
+		$recording_url = site_url("twiml/dial").'?'.http_build_query(compact('callerid', 'to', 'rest_access'));
+		
 		$response = $twilio->request("Accounts/{$this->twilio_sid}/Calls",
 									 'POST',
 									 array( "Caller" => $callerid,
@@ -145,8 +149,8 @@ class VBX_Call extends Model {
 		$recording_url = site_url("twiml/redirect/$path/$rest_access");
 		$response = $twilio->request("Accounts/{$this->twilio_sid}/Calls",
 									 'POST',
-									 array( "Caller" => $callerid,
-											"Called" => $to,
+									 array( "Caller" => PhoneNumber::normalizePhoneNumberToE164($callerid),
+											"Called" => PhoneNumber::normalizePhoneNumberToE164($to),
 											"Url" => $recording_url,
 											)
 									 );

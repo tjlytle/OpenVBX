@@ -92,6 +92,12 @@ class VBX_Message extends Model {
 														  $user_id,
 														  "Assigned to $assignee->email",
 														  'changed');
+			$annotations = $this->get_annotations($message_id);
+			openvbx_mail($assignee->email,
+						 "Message Assignment ({$message->owner}) {$message->caller}",
+						 'message_assigned',
+						 compact('message', 'annotations'));
+
 		}
 		catch(VBX_MessageException $e)
 		{
@@ -425,7 +431,8 @@ class VBX_Message extends Model {
 			{
 				openvbx_mail($user->email,
 							 "New $owner $message_type Notification - {$message->caller}",
-							 $this->notification_message($message));
+							 'message',
+							 compact('message'));
 				error_log("message queued for $email");
 			}
 
@@ -468,34 +475,6 @@ class VBX_Message extends Model {
 		return $content;
 	}
     
-    function notification_message($message)
-    {
-		$message_type = $message->type == 'sms'? 'SMS' : 'Voicemail';
-        $content = "$message_type from {$message->caller}\n\n";
-        if(!empty($message->content_text))
-        {
-			$label = $message->type == 'sms'? 'Message' : 'Transcription';
-            $content .= "$label:\n\t" . $message->content_text . "\n";
-        }
-
-
-		if($message->type == 'voice')
-		{
-			$content .= "\n-----------------------------------\n";
-			$content .= "Voicemail recorded {$message->created}\n";
-			$content .= "Length of voicemail: {$message->size} seconds\n";
-		}
-
-        $content .= "\n-----------------------------------\n";
-		$content .= "Link to details: ". site_url('/messages/details/'.$message->id). "\n";
-		if($message->type == 'voice')
-		{
-			$content .= "Link to audio: {$message->content_url}";
-		}
-        return $content;
-    }
-
-
 	function message_owner()
 	{
 		$group = new Group();

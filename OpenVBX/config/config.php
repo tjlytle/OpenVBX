@@ -27,7 +27,7 @@ $config['base_url']= "http"
 | Used for js versioning.
 |
 */
-$config['site_rev'] = 1003;
+$config['site_rev'] = 1004;
 
 /*
 |--------------------------------------------------------------------------
@@ -79,7 +79,7 @@ $config['enable_log'] = TRUE;
 | Turning this on could cause breakage in TwiML code, which will destroy calls.
 |
 */
-$config['display_errors'] = TRUE;
+$config['display_errors'] = FALSE;
 
 /*
 |--------------------------------------------------------------------------
@@ -333,7 +333,7 @@ $config['sess_time_to_update'] 	= 300;
 |
 */
 $config['cookie_prefix']	= "";
-$config['cookie_domain']	= $_SERVER['SERVER_NAME'];
+$config['cookie_domain']	= ($_SERVER['SERVER_NAME'] == 'localhost')? '' : $_SERVER['SERVER_NAME'];
 $config['cookie_path']		= str_replace('\\', '/', preg_replace('@/+$@','',dirname($_SERVER['SCRIPT_NAME'])));
 if(empty($config['cookie_path']))
 	$config['cookie_path'] = '/';
