@@ -60,8 +60,26 @@ class Dialog extends User_Controller {
 		$users = VBX_User::search(array('is_active' => 1));
 		$groups = VBX_Group::search(array('is_active' => 1));
 		
-		$data['users_and_groups'] = array_merge($users, $groups);
-		
+		$this->_usergroup(array_merge($users, $groups));
+	}
+	
+	function user()
+	{
+		$users = VBX_User::search(array('is_active' => 1));
+		$this->_usergroup($users);
+	}
+	
+	function group()
+	{
+		$groups = VBX_Group::search(array('is_active' => 1));
+		$this->_usergroup($groups);
+	}
+	
+	function _usergroup($list)
+	{
+		$data = array();
+		$data['users_and_groups'] = $list;
+
 		usort($data['users_and_groups'], "sortUsersAndGroupsByNameComparator");
 		
 		$this->respond('', 'dialog/usergroup', $data);

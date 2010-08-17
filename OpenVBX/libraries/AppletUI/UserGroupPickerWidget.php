@@ -25,14 +25,20 @@ class UserGroupPickerWidget extends AppletUIWidget
     protected $name;
     protected $label;
     protected $value;
-        
-    public function __construct($name, $label, $value = null)
+    protected $select;
+
+    const USER = 'user';
+    const GROUP = 'group';
+    const ALL = 'all';
+    
+    public function __construct($name, $label, $value = null, $select = self::ALL)
     {
         $this->name = $name;
         $this->label = $this->buildLabel($label, $value);
         $this->value = $value;
         $this->owner_type = $this->buildOwnerType($value);
         $this->owner_id = $this->buildOwnerId($value);
+        $this->select = $select;
         
         parent::__construct($this->template);
     }
@@ -85,6 +91,7 @@ class UserGroupPickerWidget extends AppletUIWidget
                           'label' => $this->label,
                           'owner_id' => $this->owner_id,
                           'owner_type' => $this->owner_type,
+        				  'select' => $this->select,
                           );
 
         $data = array_merge($defaults, $data);

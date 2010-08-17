@@ -646,7 +646,7 @@ var Pickers = {
 			}
 			
 			$('body').append($(data));
-		
+			
 			$('.usergroup-dialog').dialog({
 				bgiframe: true,
 				resizable: false,
@@ -666,16 +666,48 @@ var Pickers = {
 					"Add Group" : Pickers.usergroup.addGroup
 				}
 			});
-
+			
+			if(Pickers.usergroup.picker.rel == 'all'){
+				$('.usergroup-dialog').dialog("option", "buttons", {
+					Cancel: function() {
+					$(this).dialog('close');
+				},
+				"Add User" : Pickers.usergroup.addUser,
+				"Add Group" : Pickers.usergroup.addGroup
+				});
+			} else if(Pickers.usergroup.picker.rel == 'user'){
+				$('.usergroup-dialog').dialog("option", "buttons", {
+					Cancel: function() {
+					$(this).dialog('close');
+				},
+				"Add User" : Pickers.usergroup.addUser
+				});
+			} else if(Pickers.usergroup.picker.rel == 'group'){
+				$('.usergroup-dialog').dialog("option", "buttons", {
+					Cancel: function() {
+					$(this).dialog('close');
+				},
+				"Add Group" : Pickers.usergroup.addGroup
+				});
+			}
+			
 			$('.usergroup-dialog').dialog('open');
 		},
 		dialog : function(event) {
 			event.preventDefault();
 
 			Pickers.usergroup.picker = event.target;
+			
+			if(Pickers.usergroup.picker.rel == 'all'){
+				var url = OpenVBX.home + '/dialog/usergroup';	
+			} else if(Pickers.usergroup.picker.rel == 'user'){
+				var url = OpenVBX.home + '/dialog/user';
+			} else if(Pickers.usergroup.picker.rel == 'group'){
+				var url = OpenVBX.home + '/dialog/group';
+			}
 
 			$.ajax({
-				url : OpenVBX.home + '/dialog/usergroup',
+				url : url,
 				cache : false,
 				data : { 
 					'barebones' : 1

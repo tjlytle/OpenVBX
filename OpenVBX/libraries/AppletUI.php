@@ -23,10 +23,10 @@ require_once 'AppletUI/init.php';
 
 class AppletUI {
 
-    public static function userGroupPicker($name = 'userGroupPicker', $label = 'Select a User or Group')
+    public static function userGroupPicker($name = 'userGroupPicker', $label = 'Select a User or Group', $select = null)
     {
         $value = AppletInstance::getUserGroupPickerValue($name);
-        $widget = new UserGroupPickerWidget($name, $label, $value);
+        $widget = new UserGroupPickerWidget($name, $label, $value, $select);
         return $widget->render();
     }
 
