@@ -2,7 +2,7 @@
 $response = new TwimlResponse;
 
 $now = date_create('now');
-$today = date_format($now, 'w') - 1;
+$today = date_format($now, 'N') - 1;
 
 /** 
  * The names of the applet instance variables for "from" and "to" times 
