@@ -1,5 +1,7 @@
 <?php  if ( ! defined('BASEPATH')) exit('No direct script access allowed');
 
+define('MIN_PHP_VERSION', '5.2.3');
+
 /*
 |--------------------------------------------------------------------------
 | File and Directory Modes

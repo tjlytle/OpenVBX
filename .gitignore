@@ -1,0 +1,9 @@
+OpenVBX/config/database.php
+OpenVBX/config/openvbx.php
+OpenVBX/config/*-local.php
+system/logs/*.php
+audio-uploads/*
+apc.php
+info.php
+memcache.php
+.idea

@@ -22,6 +22,7 @@
 class Logout extends MY_Controller
 {
 	protected $user_id;
+	protected $js_assets = 'loginjs';
 
 	function __construct()
 	{
@@ -29,7 +30,9 @@ class Logout extends MY_Controller
 		$this->config->load('openvbx');
 		$this->load->database();
 
-
+		$ci =& get_instance();
+		$ci->cache->enabled(false);
+		
 		$this->user_id = $this->session->userdata('user_id');
 	}
 
@@ -40,9 +43,8 @@ class Logout extends MY_Controller
 	
 	private function logout()
 	{
-		
 		$this->session->sess_destroy();
-        $this->session->set_userdata('loggedin', false);
+		$this->session->set_userdata('loggedin', false);
 		
 		$data = array('error' => 'You have been logged out.',
 					  'redirect' => '',

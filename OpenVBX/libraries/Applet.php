@@ -316,10 +316,10 @@ class Applet
 		}
 
 		AppletInstance::setFlowType($this->flow_type);
-		OpenVBX::$currentPlugin = AppletInstance::$plugin;
 		// Plugin directory name is the natural key until a proper guid system is developed
 		$plugin = new Plugin($this->plugin_dir_name);
 		PluginData::setPluginId($plugin->getPluginId());
+		OpenVBX::$currentPlugin = $plugin;
 
 		// Set the flow store singleton to current flow
 		FlowStore::setFlowId($flow_id);
@@ -348,7 +348,7 @@ class Applet
 			// Plugin directory name is the natural key until a proper guid system is developed
 			$plugin = new Plugin($this->plugin_dir_name);
 			PluginData::setPluginId($plugin->getPluginId());
-			OpenVBX::$currentPlugin = AppletInstance::$plugin;
+			OpenVBX::$currentPlugin = $plugin;
 
 			$instance = isset($instance->data) && is_array($instance->data)? $instance->data : array();
 		}
@@ -367,8 +367,8 @@ class Applet
 		$output = '<?xml version="1.0" ?><Response />';
 		ob_start();
 		require_once(APPPATH.'libraries/twilio.php');
-
-		require_once($path);
+		// require once was hampering our ability to run an applet multiple times (ie: in integration tests)
+		require($path);
 		$output = ob_get_contents();
 		ob_end_clean();
 

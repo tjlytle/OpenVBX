@@ -18,16 +18,12 @@
 
  * Contributor(s):
  * Tim Lytle <tim@timlytle.net>
+ * Chad Smith <chad@nospam.me>
  **/
-
-require_once(APPPATH.'libraries/twilio.php');
-require_once(APPPATH.'libraries/Applet.php');
-
 
 class HookException extends Exception {}
 
-/* This controller handles unauthenticated web requests to plugins
-*/
+// This controller handles unauthenticated web requests to plugins
 class Hook extends MY_Controller {
 
 	public function __construct()
@@ -35,24 +31,26 @@ class Hook extends MY_Controller {
 		parent::__construct();
 	}
 
- 	public function index($hook)
+	public function index()
 	{
+		$args = func_get_args();
+		$hook = implode('/', $args);
 		$plugins = Plugin::all();
 		foreach($plugins as $plugin)
 		{
-                        // First plugin wins
-                        $data['script'] = $plugin->getHookScript($hook);
+			// First plugin wins
+			$data['script'] = $plugin->getHookScript($hook);
 
-                        if(!empty($data['script']))
-                        {
-                                //include the script
-                                define("HOOK", true);
-                                require($data['script']);
-                                return;
-                        }
+			if(!empty($data['script']))
+			{
+				// include the script
+				define("HOOK", true);
+				require($data['script']);
+				return;
+			}
 		}
 
-                redirect('');
+		redirect('');
 	}
 }
 ?>

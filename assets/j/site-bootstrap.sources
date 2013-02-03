@@ -1,6 +1,6 @@
 soundmanager2/soundmanager2.js
-frameworks/jquery-1.4.2.js
-frameworks/jquery-ui.js
+frameworks/jquery-1.6.2.min.js
+frameworks/jquery-ui-1.8.14.custom.min.js
 swfupload/swfupload.js
 swfupload/swfupload.cookies.js
 modal-tabs.js
@@ -16,6 +16,7 @@ plugins/jquery.animateToClass.js
 plugins/static.js
 plugins/jquery.swfupload.js
 plugins/jquery.tabify.js
+plugins/jquery.timePicker.min.js
 global.js
 sound.js
 pickers.js

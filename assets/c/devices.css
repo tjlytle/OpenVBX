@@ -20,7 +20,7 @@
 
 
 .device-container {
-	margin-bottom: 40px;
+	margin-bottom: 20px;
 }
 
 .device-container h3 {
@@ -33,16 +33,20 @@
 	color: #999;
 	font-style: italic;
 	border: 1px solid #CCC;
-    -moz-border-radius: 6px;
-    -webkit-border-radius: 6px;
+    -moz-border-radius: 6px; /* FF1+ */
+    -webkit-border-radius: 6px; /* Saf3+, Chrome */
+    -khtml-border-radius: 6px; /* Konqueror */
+    border-radius: 6px; /* Standard. IE9 */
+    -webkit-background-clip: padding-box;
 }
 
 .device-container .device-list{
     width: 100%;
-    margin: 10px 0 50px 0;
+    margin: 10px 0 20px 0;
 }
 
-.device-container .device-list .device {
+.device-container .device-list .device,
+.device-container .device-list .device-placeholder {
     height: 39px;
     line-height: 39px;
     margin-bottom: 5px;
@@ -51,7 +55,14 @@
     border: 1px solid #CCC;
     -moz-border-radius: 6px;
     -webkit-border-radius: 6px;
+    -khtml-border-radius: 6px;
+    border-radius: 6px;
+    -webkit-background-clip: padding-box;
     cursor: move;
+}
+.device-container .device-list .device-placeholder {
+	background: #FFF;
+	border: 1px dotted #DDD;
 }
 
 .device-container .device-list .device-hover {
@@ -120,7 +131,10 @@
     background-color: #777;
     border: 1px solid #444;
     -moz-border-radius: 4px;
-    -webkit-border-radius: 4px;
+	-webkit-border-radius: 4px;
+	-khtml-border-radius: 4px;
+	border-radius: 4px;
+	-webkit-background-clip: padding-box;
 }
 
 .device-container .device-status a {
@@ -143,7 +157,6 @@
 	background-color: #777;
 }
 
-
 .device-container .device-status .checkbox {
     display: none;
 }
@@ -163,4 +176,55 @@
 
 .device-container .radio {
     margin: 2px 3px 0 0;
+}
+
+.mobile-apps-toggle-link {
+	margin: 0 0 0 2px;
+	padding: 0 0 0 20px;
+	background: url('../i/toggle-arrow-16.png') no-repeat left top;
+}
+
+.opened-apps {
+	background: url('../i/toggle-arrow-16.png') no-repeat left bottom;
+}
+
+/* Applications Container */
+
+.application-container {
+	display: block;
+}
+
+.application-container .application {
+	padding: 15px;
+    border: 1px solid #CCC;
+    -moz-border-radius: 6px;
+    -webkit-border-radius: 6px;
+    -khtml-border-radius: 6px;
+    border-radius: 6px;
+    -webkit-background-clip: padding-box;
+	overflow: auto;
+	clear: both;
+}
+
+.application-container .app-icon {
+	float: left;
+	margin: 0 10px 10px 0;
+}
+
+.application-container .app-name {
+	width: 500px;
+	margin: 4px 0 3px 0;
+	font-size: 19px;
+	color: #555;
+}
+
+.application-container .app-desc {
+	float: left;
+	width: 500px;
+	color: #666;
+}
+
+.application-container .application .email-button {
+	float: left;
+	margin: 0 0 0 60px;
 }

@@ -30,12 +30,13 @@ CREATE TABLE IF NOT EXISTS `groups_users` (
   `group_id` int(11) NOT NULL,
   `user_id` int(11) NOT NULL,
   `tenant_id` BIGINT(20) NOT NULL,
+  `order` TINYINT(3) DEFAULT 0,
   PRIMARY KEY  (`id`),
   KEY `group_id` (`group_id`),
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
 
-DROP TABLE IF EXISTS `audio_files`; 
+DROP TABLE IF EXISTS `audio_files`;
 CREATE TABLE IF NOT EXISTS `audio_files` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `label` varchar(255) DEFAULT NULL,
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `created` datetime default NULL,
   `updated` datetime default NULL,
   `read` datetime default NULL,
-  `call_guid` varchar(40) default NULL,
+  `call_sid` varchar(40) default NULL,
   `caller` varchar(20) default NULL,
   `called` varchar(20) default NULL,
   `type` varchar(10) default NULL,
@@ -75,7 +76,7 @@ CREATE TABLE IF NOT EXISTS `messages` (
   `ticket_status` ENUM('open', 'closed', 'pending') NOT NULL DEFAULT 'open',
   `tenant_id` BIGINT(20) NOT NULL,
   PRIMARY KEY  (`id`),
-  KEY `call_guid` (`call_guid`),
+  KEY `call_sid` (`call_sid`),
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
 
@@ -101,7 +102,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `is_active` tinyint(1) default 1,
   `first_name` varchar(100) default NULL,
   `last_name` varchar(100) default NULL,
-  `password` varchar(40) default NULL,
+  `password` varchar(128) default NULL,
   `invite_code` varchar(32) NULL,
   `email` varchar(200) default NULL,
   `pin` varchar(40) default NULL,
@@ -109,12 +110,22 @@ CREATE TABLE IF NOT EXISTS `users` (
   `auth_type` TINYINT NOT NULL default 1,
   `voicemail` TEXT NOT NULL,
   `tenant_id` BIGINT(20) NOT NULL,
-  `last_seen` datetime DEFAULT NULL,
-  `last_login` datetime DEFAULT NULL,
   PRIMARY KEY  (`id`),
   UNIQUE KEY `email` (`email`, `tenant_id`),
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
+
+DROP TABLE IF EXISTS `user_settings`;
+CREATE TABLE `user_settings` (
+  `id` int(11) unsigned NOT NULL auto_increment,
+  `user_id` int(11) NOT NULL,
+  `key` varchar(255) default NULL,
+  `value` text,
+  `tenant_id` int(11) NOT NULL default '1',
+  PRIMARY KEY  (`id`),
+  KEY `user_key` (`user_id`,`key`),
+  KEY `key` (`key`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
 
 DROP TABLE IF EXISTS `auth_types`;
 CREATE TABLE IF NOT EXISTS `auth_types` (
@@ -125,11 +136,11 @@ CREATE TABLE IF NOT EXISTS `auth_types` (
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
 
-DROP TABLE IF EXISTS `rest_access`; 
-CREATE TABLE IF NOT EXISTS `rest_access` ( 
+DROP TABLE IF EXISTS `rest_access`;
+CREATE TABLE IF NOT EXISTS `rest_access` (
   `key` VARCHAR(32) NOT NULL,
-  `locked` TINYINT NOT NULL DEFAULT 0, 
-  `created` DATETIME NOT NULL, 
+  `locked` TINYINT NOT NULL DEFAULT 0,
+  `created` DATETIME NOT NULL,
   `user_id` INT NOT NULL,
   `tenant_id` BIGINT(20) NOT NULL,
   PRIMARY KEY (`key`),
@@ -158,7 +169,7 @@ CREATE TABLE IF NOT EXISTS `user_annotations` (
   user_id INT(11) NOT NULL,
   annotation_id BIGINT NOT NULL,
   `tenant_id` BIGINT(20) NOT NULL,
-  PRIMARY KEY(user_id, annotation_id),   
+  PRIMARY KEY(user_id, annotation_id),
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
 
@@ -202,6 +213,7 @@ CREATE TABLE IF NOT EXISTS `tenants` (
   url_prefix VARCHAR(255) NOT NULL,
   local_prefix VARCHAR(1000) NOT NULL,
   active TINYINT NOT NULL DEFAULT 1,
+  type TINYINT NOT NULL DEFAULT 0,
   PRIMARY KEY(id),
   INDEX(name),
   INDEX url_prefix (url_prefix)
@@ -209,9 +221,9 @@ CREATE TABLE IF NOT EXISTS `tenants` (
 
 DROP TABLE IF EXISTS `settings`;
 CREATE TABLE IF NOT EXISTS `settings` (
-  id BIGINT AUTO_INCREMENT,	
-  tenant_id BIGINT NOT NULL, 
-  name VARCHAR(32) NOT NULL, 
+  id BIGINT AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  name VARCHAR(32) NOT NULL,
   value VARCHAR(255) NOT NULL,
   PRIMARY KEY(id),
   INDEX(name),
@@ -240,6 +252,15 @@ CREATE TABLE IF NOT EXISTS `plugin_store` (
   INDEX(`tenant_id`)
 ) ENGINE=InnoDB CHARSET=UTF8;
 
+DROP TABLE IF EXISTS `cache`;
+CREATE TABLE `cache` (
+  `key` varchar(255) NOT NULL default '',
+  `group` varchar(255) NOT NULL default '',
+  `value` MEDIUMBLOB NOT NULL,
+  `tenant_id` int(11) NOT NULL,
+  PRIMARY KEY  (`key`(80),`group`(80),`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
 ALTER TABLE settings ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
 
 ALTER TABLE user_messages ADD FOREIGN KEY(user_id) REFERENCES users(id);
@@ -254,7 +275,6 @@ ALTER TABLE users ADD FOREIGN KEY(auth_type) REFERENCES auth_types(id);
 
 ALTER TABLE groups_users ADD FOREIGN KEY(user_id) REFERENCES users(id);
 ALTER TABLE groups_users ADD FOREIGN KEY(group_id) REFERENCES groups(id);
-
 
 ALTER TABLE flows ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
 ALTER TABLE groups ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
@@ -274,14 +294,13 @@ ALTER TABLE annotation_types ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
 ALTER TABLE flow_store ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
 ALTER TABLE plugin_store ADD FOREIGN KEY(tenant_id) REFERENCES tenants(id);
 
-
-INSERT INTO tenants 
-	   (name, url_prefix, local_prefix) 
-	   VALUES 
+INSERT INTO tenants
+	   (name, url_prefix, local_prefix)
+	   VALUES
 	   ('default', '', '');
 
-INSERT INTO annotation_types (description, tenant_id) 
-	   VALUES 
+INSERT INTO annotation_types (description, tenant_id)
+	   VALUES
 	   ('called', 1),
 	   ('read', 1),
 	   ('noted', 1),
@@ -294,22 +313,27 @@ INSERT INTO auth_types (description, tenant_id)
 	   ('openvbx', 1),
 	   ('google', 1);
 
-
-INSERT INTO settings 
+INSERT INTO settings
 	   (name, value, tenant_id)
 	   VALUES
-	   ('from_email' , '', 1),
 	   ('dash_rss', '', 1),
 	   ('theme', '', 1),
-	   ('version', '0.83', 1),
 	   ('iphone_theme', '', 1),
-	   ('enable_sandbox_number', 1, 1),
-	   ('twilio_endpoint', 'https://api.twilio.com/2008-08-01', 1);
-	   
+	   ('enable_sandbox_number', 0, 0),
+	   ('twilio_endpoint', 'https://api.twilio.com/2010-04-01', 1),
+	   ('recording_host','',1),
+	   ('transcriptions', '1', 1),
+	   ('voice', 'man', 1),
+	   ('voice_language', 'en', 1),
+	   ('numbers_country', 'US', 1),
+	   ('gravatars', 0, 1),
+	   ('connect_application_sid', 0, 1),
+	   ('dial_timeout', 15, 1),
+	   ('email_notifications_voice', 1, 1),
+	   ('email_notifications_sms', 1, 1);
 
 INSERT INTO groups
        (name, is_active, tenant_id)
        VALUES
        ('Sales', 1, 1),
        ('Support', 1, 1);
-       

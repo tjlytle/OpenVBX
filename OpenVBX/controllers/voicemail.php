@@ -74,7 +74,8 @@ class Voicemail extends User_Controller {
 	
 	private function greeting_handler()
 	{
-		switch($this->request_method) {
+		switch($this->request_method) 
+		{
 			case 'POST':
 				return $this->save_greeting();
 			case 'GET':
@@ -102,7 +103,7 @@ class Voicemail extends User_Controller {
 				{
 					// This is a locally hosted file, and we need to return the correct
 					// absolute URL for the file.
-					$json['play'] = real_site_url("audio-uploads/" . $matches[1]);
+					$json['play'] = real_site_url("audio-uploads/".$matches[1]);
 				}
 		    }
 		    else
@@ -114,8 +115,9 @@ class Voicemail extends User_Controller {
 
 		$data['json'] = $json;
 		if($this->response_type != 'json')
+		{
 			return redirect('voicemail');
-		
+		}
 		$this->respond('', 'voicemail/greeting', $data);
 	}
 	
@@ -125,15 +127,17 @@ class Voicemail extends User_Controller {
 
 		$user = VBX_User::get($this->user_id);
 		$user->voicemail = $this->input->post('voicemail');
-		
+
 		try
 		{
 			$user->save();
 		}
 		catch(VBX_UserException $e)
 		{
-			$data['json'] = array('error' => true,
-								  'message' => $e->getMessage());
+			$data['json'] = array(
+				'error' => true,
+				'message' => $e->getMessage()
+			);
 		}
 
 		return $data;

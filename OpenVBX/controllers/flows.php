@@ -23,12 +23,15 @@ require_once(APPPATH.'libraries/twilio.php');
 
 class Flows extends User_Controller {
 
+	private $flows_per_page = '50';
+
 	function __construct()
 	{
 		parent::__construct();
 		$this->load->library('applet');
 		$this->section = 'flows';
 		$this->admin_only($this->section);
+		$this->load->library('pagination');
 	}
 
 	function index()
@@ -46,32 +49,48 @@ class Flows extends User_Controller {
 	
 	private function flows()
 	{
+		$max = $this->input->get_post('max');
+		$offset = $this->input->get_post('offset');
+		
+		if (empty($max)) {
+			$max = $this->flows_per_page;
+		}
+		
 		$this->template->add_js('assets/j/flows.js');
 		
 		$data = $this->init_view_data();
 		
-		$flows = VBX_Flow::search(array(), 100, 0);
+		$flows = VBX_Flow::search(array(), $max, $offset);
 		if(empty($flows))
 		{
-			set_banner('flows',
-					   'Customize what happens when someone calls into your Twilio numbers.',
-					   'Add or modify a flow below.'
-					   );
+			set_banner('flows', $this->load->view('banners/flows-start', array(), true));
 		}
 
 		$flows_with_numbers = array();
 		foreach($flows as $flow)
 		{
-			$flows_with_numbers[] = array('id' => $flow->id,
-										  'name' => trim($flow->name),
-										  'numbers' => $flow->numbers,
-										  'voice_data' => $flow->data,
-										  'sms_data' => $flow->sms_data,
-										  );
+			$flows_with_numbers[] = array(
+				'id' => $flow->id,
+				'name' => trim($flow->name),
+				'numbers' => $flow->numbers,
+				'voice_data' => $flow->data,
+				'sms_data' => $flow->sms_data,
+			);
 		}
 		
 		$data['items'] = $flows_with_numbers;
 		$data['highlighted_flows'] = array($this->session->flashdata('flow-first-save', 0));
+		
+		// pagination
+		$total_items = VBX_Flow::count();
+		$page_config = array(
+			'base_url' => site_url('flows/'),
+			'total_rows' => $total_items,
+			'per_page' => $max
+		);
+		$this->pagination->initialize($page_config);
+		$data['pagination'] = CI_Template::literal($this->pagination->create_links());
+		
 		$this->respond('Call Flows', 'flows', $data);
 	}
 
@@ -209,23 +228,26 @@ class Flows extends User_Controller {
 		$this->template->add_js('assets/j/accounts.js');
 		$this->template->add_js('assets/j/plugins/jquery.address-1.0.min.js');
 
-		if($this->config->item('use_unminimized_js'))
+		foreach($applets as $applet)
 		{
-			foreach($applets as $applet)
+			if ($this->config->item('use_unminimized_js') && !empty($applet->script_url))
 			{
-				if(!empty($applet->script_url))
-				{
-					$this->template->add_js($applet->script_url, 'absolute');
-				}
-				
-				if(!empty($applet->style_url))
-				{
-					$this->template->add_css($applet->style_url, 'link');
-				}
+				$this->template->add_js($applet->script_url, 'absolute');
+			}
+			if ($this->config->item('use_unminimized_css')
+				&& !empty($applet->style_url))
+			{
+				$this->template->add_css($applet->style_url, 'link');
 			}
 		}
+
+		if (!$this->config->item('use_unminimized_js')) {
+			$this->template->add_js(site_url('/flows/scripts'), 'absolute');
+		}
+		if (!$this->config->item('use_unminimized_css')) {
+			$this->template->add_css(site_url('flows/styles'), 'link');
+		}
 		
-		$this->template->add_js('flows/scripts', 'dynamic');
 		$flow = VBX_Flow::get($id);
 		
 		if(empty($flow))
@@ -255,7 +277,7 @@ class Flows extends User_Controller {
 		{
 			$flow_data = get_object_vars($flow_obj);
 		}
-		
+
 		// add start instance if it's not there
 		if(!isset($flow_data['start']))
 		{
@@ -296,7 +318,7 @@ class Flows extends User_Controller {
 		}
 
 		$flow->name = trim($this->input->post('name'));
-		
+	
 		$voice_data = $this->input->post('data');
 		$sms_data = $this->input->post('sms_data');
 

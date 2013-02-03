@@ -5,7 +5,6 @@ echo '<Response>';
 echo AppletInstance::getValue('twiml');
 if(!empty($next))
 {
-    echo "<Redirect>".$next."</Redirect>";
+	echo "<Redirect>".$next."</Redirect>";
 }
 echo '</Response>';
-?>

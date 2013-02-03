@@ -35,7 +35,7 @@ if(isset($flow_data)) printf('<script type="text/javascript">var flow_data = %s;
 
 				<tr id="instance-row">
 
-                    <?php foreach($flow_data as $instance_id => $instance): ?>
+					<?php foreach($flow_data as $instance_id => $instance): ?>
 					<?php $applet = isset($applets[$instance->type]) ? $applets[$instance->type] : null; ?>
 					<?php if(is_object($applet)): ?>
 					<?php $template = $applet->render($flow->id, $instance); ?>
@@ -89,7 +89,7 @@ if(isset($flow_data)) printf('<script type="text/javascript">var flow_data = %s;
 	</div><!-- .yui-ge 3/4, 1/4 -->
 		
 	</div><!-- .content-container -->
-
+	<div id="dialog-templates" style="display: none">
 		<div id="dialog-app-delete" class="dialog hide" title="Delete applet">
 			<p>Are you sure you want to delete this applet?</p>
 		</div>
@@ -117,6 +117,7 @@ if(isset($flow_data)) printf('<script type="text/javascript">var flow_data = %s;
 		<div id="dialog-close" class="dialog hide" title="Flow Modified">
 			<p>Would you like to save your changes before closing the editor?</p>
 		</div>
+	</div>
 </div>
 
 <?php include("user_group_dialogs.php"); ?>

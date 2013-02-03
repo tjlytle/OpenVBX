@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -18,248 +18,328 @@
 
  * Contributor(s):
  **/
-	
+
 require_once(APPPATH . 'libraries/twilio.php');
 
 class VBX_IncomingNumberException extends Exception {}
 
 class VBX_Incoming_numbers extends Model
 {
-	private $cache_key;
-
-	const CACHE_TIME_SEC = 3600;
-
 	public function __construct()
 	{
 		parent::__construct();
-		
-		$this->twilio = new TwilioRestClient($this->twilio_sid,
-											 $this->twilio_token,
-											 $this->twilio_endpoint);
-		
-		$this->cache_key = $this->twilio_sid . '_incoming_numbers';
-
 	}
 
-	function get_sandbox()
-	{
-		if(function_exists('apc_fetch')) {
-			$success = FALSE;
-			$data = apc_fetch($this->cache_key.'sandbox', $success);
-
-			if($data AND $success) {
-				$sandbox = simplexml_load_string($data);
-				return $sandbox;
-			}
-		}
-		
-		/* Get Sandbox Number */
-		try
+	public function get_numbers($retrieve_sandbox = 'deprecated')
+	{		
+		$ci =& get_instance();
+		$cache_key = 'incoming-numbers';
+		if ($cache = $ci->api_cache->get($cache_key, __CLASS__, $ci->tenant->id))
 		{
-			$response = $this->twilio->request("Accounts/{$this->twilio_sid}/Sandbox");
-		}
-		catch(TwilioException $e)
-		{
-			throw new VBX_IncomingNumberException('Failed to connect to Twilio.', 503);
+			return $cache;
 		}
 
-		if(isset($response->ResponseXml->TwilioSandbox))
-		{
-			$sandbox = $response->ResponseXml->TwilioSandbox;
-		}
-
-		if(function_exists('apc_store')) {
-			$success = apc_store($this->cache_key.'sandbox', $sandbox->asXML(), self::CACHE_TIME_SEC);
-		}
-
-		return $sandbox;
-	}
-
-	function get_numbers($retrieve_sandbox = true)
-	{
 		$numbers = array();
-		if(function_exists('apc_fetch')) {
-			$success = FALSE;
-			$data = apc_fetch($this->cache_key.'numbers'.$retrieve_sandbox, $success);
-			if($data AND $success) {
-				$numbers = @unserialize($data);
-				if(is_array($numbers)) return $numbers;
-			}
-		}
-		
-		/* Get IncomingNumbers */
-		try
-		{
-			$response = $this->twilio->request("Accounts/{$this->twilio_sid}/IncomingPhoneNumbers");
-		}
-		catch(TwilioException $e)
-		{
-			throw new VBX_IncomingNumberException('Failed to connect to Twilio.', 503);
-		}
-
-		if($response->IsError)
-		{
-			throw new VBX_IncomingNumberException($response->ErrorMessage, $response->HttpStatus);
-		}
-		
-
-		$items = array();
-		if(isset($response->ResponseXml->IncomingPhoneNumbers->IncomingPhoneNumber))
-		{
-			$phoneNumbers = $response->ResponseXml->IncomingPhoneNumbers->IncomingPhoneNumber
-				? $response->ResponseXml->IncomingPhoneNumbers->IncomingPhoneNumber
-				: array($response->ResponseXml->IncomingPhoneNumbers->IncomingPhoneNumber);
-			foreach($phoneNumbers as $number)
+		try {
+			$account = OpenVBX::getAccount();
+			foreach ($account->incoming_phone_numbers as $number) 
 			{
-				$items[] = $number;
+				// check that number is a proper instance type
+				$numbers[] = $this->parseIncomingPhoneNumber($number);
 			}
 		}
-		
-		$ci = &get_instance();
-		$enabled_sandbox_number = $ci->settings->get('enable_sandbox_number', $ci->tenant->id);
-		if($enabled_sandbox_number && $retrieve_sandbox) {
-			$sandbox = $this->get_sandbox();
-			$items[] = $sandbox;
+		catch (Exception $e) {
+			$msg = 'Unable to fetch Numbers: ';
+			switch ($e->getCode())
+			{
+				case 20003:
+					$msg .= 'Authentication Failed.';
+					break;
+				default:
+					$msg .= $e->getMessage();
+			}
+			throw new VBX_IncomingNumberException($msg, $e->getCode());
 		}
-		
-		foreach($items as $item)
-		{
-			$numbers[] = $this->parseIncomingPhoneNumber($item);
-		}
-		
-		if(function_exists('apc_store')) {
-			$success = apc_store($this->cache_key.'numbers'.$retrieve_sandbox, serialize($numbers), self::CACHE_TIME_SEC);
-		}
+
+		$ci->api_cache->set('incoming-numbers', $numbers, __CLASS__, $ci->tenant->id);
 
 		return $numbers;
 	}
-
-	private function clear_cache()
-	{
-		if(function_exists('apc_delete'))
+	
+	public function get_available_countries()
+	{	
+		$ci =& get_instance();
+		if ($cache = $ci->api_cache->get('countries', __CLASS__, $ci->tenant->id))
 		{
-			apc_delete($this->cache_key.'numbers');
-			apc_delete($this->cache_key.'numbers1');
-			apc_delete($this->cache_key.'numbers0');
-			apc_delete($this->cache_key.'sandbox');
-			apc_delete($this->cache_key.'sandbox1');
-			apc_delete($this->cache_key.'sandbox0');
-			return TRUE;
+			return $cache;
 		}
+
+		$countries = array();		
+		$ci->config->load('countrycodes');
 		
-		return FALSE;
+		try {
+			$account = OpenVBX::getAccount();
+			$page = 0;
+			do {
+				$list = $account->available_phone_numbers->getPage($page);
+				if (is_array($list->countries) && count($list->countries)) 
+				{
+					foreach ($list->countries as $country)
+					{
+						// no subresource uris means the account can't purchase here
+						// or that the country is not yet available for purchase
+						if (empty($country->subresource_uris))
+						{
+							continue;
+						}
+						
+						if ($countrydata = $ci->config->item($country->country_code,'countrycodes'))
+						{
+							$country->code = $countrydata[0];
+							if (!empty($countrydata[1]))
+							{
+								$country->search = $countrydata[1];
+							}
+							else
+							{
+								$country->search = '+'.$country->code.' (*)';
+							}
+						}
+						$countries[$country->country_code] = $country;
+					}
+				}
+				$page++;
+			}
+			while (!empty($list->next_page_uri));
+		}
+		catch (Exception $e) {
+			throw new VBX_IncomingNumberException($e->getMessage());
+		}
+
+		ksort($countries);	
+		$ci->api_cache->set('countries', $countries, __CLASS__, $ci->tenant->id);
+
+		return $countries;
 	}
 
 	private function parseIncomingPhoneNumber($item)
 	{
 		$num = new stdClass();
 		$num->flow_id = null;
-		$num->id = (string) isset($item->Sid)? (string) $item->Sid : 'Sandbox';
-		$num->name = (string) $item->FriendlyName;
-		$num->phone = format_phone($item->PhoneNumber);
-		$num->pin = isset($item->Pin)? (string)$item->Pin : null;
-		$num->sandbox = isset($item->Pin)? true : false;
-		$num->url = (string) $item->Url;
-		$num->method = (string) $item->Method;
-		$num->smsUrl = (string) $item->SmsUrl;
-		$num->smsMethod = (string) $item->SmsMethod;
-		
+		$num->id = $item->sid;
+		$num->name = $item->friendly_name;
+		$num->phone = format_phone($item->phone_number);
+		$num->phone_number = $item->phone_number;
+		$num->url = $item->voice_url;
+		$num->method = $item->voice_method;
+		$num->smsUrl = $item->sms_url;
+		$num->smsMethod = $item->sms_method;
+		$num->capabilities = $item->capabilities;
+		$num->voiceApplicationSid = $item->voice_application_sid;
+
+		// @todo do comparison against url domain, then against 'twiml/start'
+		// then include warning when small differences like www/non-www are encountered
+		// don't be friendly to other sub-domain matches, only www since that is the
+		// only safe variation to assume
 		$call_base = site_url('twiml/start') . '/';
 		$base_pos = strpos($num->url, $call_base);
 		$num->installed = ($base_pos !== FALSE);
 
 		$matches = array();
-		
-		if (!preg_match('/\/(voice|sms)\/(\d+)$/', $num->url, $matches) == 0)
+		if ($num->installed && preg_match('/\/(voice|sms)\/(\d+)$/', $num->url, $matches) > 0)
 		{
 			$num->flow_id = intval($matches[2]);
-		}
-		else
-		{
-			error_log("Skipping unexpected URL pattern: '" . $num->url . "'");
 		}
 
 		return $num;
 	}
 
-	function assign_flow($phone_id, $flow_id)
+	/**
+	 * Assign a number to a flow
+	 *
+	 * @param string $phone_id - phone number sid
+	 * @param int $flow_id - flow id
+	 * @return bool
+	 */
+	public function assign_flow($phone_id, $flow_id)
 	{
-		$voice_url = site_url("twiml/start/voice/$flow_id");
-		$sms_url = site_url("twiml/start/sms/$flow_id");
-		if(strtolower($phone_id) == 'sandbox')
-			$rest_url = "Accounts/{$this->twilio_sid}/Sandbox";
-		else
-			$rest_url = "Accounts/{$this->twilio_sid}/IncomingPhoneNumbers/$phone_id";
+		$voice_url = site_url('twiml/start/voice/'.$flow_id);
+		$sms_url = site_url('twiml/start/sms/'.$flow_id);
 
-		$response = $this->twilio->request($rest_url,
-										   'PUT',
-										   array('Url' => $voice_url,
-												 'SmsUrl' => $sms_url,
-												 'VoiceFallbackUrl' => base_url().'fallback/voice.php',
-												 'SmsFallbackUrl' => base_url().'fallback/sms.php',
-												 'VoiceFallbackMethod' => 'GET',
-												 'SmsFallbackMethod' => 'GET',
-												 'SmsMethod' => 'POST')
-										   );
-		
-		if($response->IsError)
+		try {
+			$account = OpenVBX::getAccount();
+			$number = $account->incoming_phone_numbers->get($phone_id);
+
+			$number->update(array(
+					'VoiceUrl' => $voice_url,
+					'SmsUrl' => $sms_url,
+					'VoiceFallbackUrl' => base_url().'fallback/voice.php',
+					'SmsFallbackUrl' => base_url().'fallback/sms.php',
+					'VoiceFallbackMethod' => 'GET',
+					'SmsFallbackMethod' => 'GET',
+					'SmsMethod' => 'POST',
+					'ApiVersion' => '2010-04-01',
+					'VoiceApplicationSid' => '',
+					'SmsApplicationSid' => ''
+				));
+		} 
+		catch (Exception $e) 
 		{
-			throw new VBX_IncomingNumberException($response->ErrorMessage);
+			throw new VBX_IncomingNumberException($e->getMessage());
 		}
 
 		$this->clear_cache();
 		return TRUE;
 	}
 
-	// purchase a new phone number, return the new number
-	function add_number($is_local, $area_code)
-	{
+	/**
+	 * Purchase a new number
+	 *
+	 * @param bool $is_local 
+	 * @param string $area_code 
+	 * @return void
+	 */
+	public function add_number($is_local, $area_code, $country)
+	{		
 		$voice_url = site_url("twiml/start/voice/0");
 		$sms_url = site_url("twiml/start/sms/0");
-		
-		$rest_url = "Accounts/{$this->twilio_sid}/IncomingPhoneNumbers/" . ($is_local ? 'Local' : 'TollFree');
 
-		if($is_local
-		   && (
-			   !empty($area_code) &&
-			   (strlen(trim($area_code)) != 3 ||
-				preg_match('/([^0-9])/', $area_code) > 0)))
+		if($is_local && (!empty($area_code) && preg_match('/([^0-9])/', $area_code) > 0))
 		{
 			throw new VBX_IncomingNumberException('Area code invalid');
 		}
 
-		$params = array('Url' => $voice_url,
-						'SmsUrl' => $sms_url);
+		$params = array(
+			'VoiceUrl' => $voice_url,
+			'SmsUrl' => $sms_url,
+			'VoiceFallbackUrl' => base_url().'fallback/voice.php',
+			'SmsFallbackUrl' => base_url().'fallback/sms.php',
+			'VoiceFallbackMethod' => 'GET',
+			'SmsFallbackMethod' => 'GET',
+			'SmsMethod' => 'POST',
+			'ApiVersion' => '2010-04-01',
+		);
 		
-		if($is_local && !empty($area_code))
-		{
-			$params['AreaCode'] = $area_code;
+		try {
+			$account = OpenVBX::getAccount();
+			if(!$is_local) 
+			{
+				// toll-free
+				$numbers = $account->available_phone_numbers
+													->getTollFree($country)
+													->getList();
+				
+				if (count($numbers->available_phone_numbers)) 
+				{
+					$params['PhoneNumber'] = $numbers->available_phone_numbers[0]->phone_number;
+				}
+				else 
+				{
+					throw new VBX_IncomingNumberException('Currently out of TollFree numbers. '.
+															'Please try again later.');
+				}
+			}
+			else 
+			{ 
+				// local
+				$search_params = array();
+				if (!empty($area_code))
+				{
+					$search_params['AreaCode'] = $area_code;
+				}
+				$numbers = $account->available_phone_numbers
+													->getList($country, 'Local', $search_params);
+
+				if (count($numbers->available_phone_numbers))
+				{
+					$params['PhoneNumber'] = $numbers->available_phone_numbers[0]->phone_number;
+				}
+				else
+				{
+					if (!empty($area_code))
+					{
+						$message = 'Could not find any numbers in Area Code "'.$area_code.'". '.
+								'Please try again later or try a different Area Code.';
+					}
+					else 
+					{
+						$message = 'Could not find any available phone numbers. '.
+								'Please try again later.';
+					}
+					throw new VBX_IncomingNumberException($message);
+				}
+			}
+			$number = $account->incoming_phone_numbers->create($params);
 		}
-
-		$response = $this->twilio->request($rest_url, 'POST', $params);
-
-		if($response->IsError)
+		catch (Exception $e) 
 		{
-			throw new VBX_IncomingNumberException($response->ErrorMessage);
+			throw new VBX_IncomingNumberException($e->getMessage());
 		}
 
 		$this->clear_cache();
-		
-		return $this->parseIncomingPhoneNumber($response->ResponseXml->IncomingPhoneNumber);
+		return $this->parseIncomingPhoneNumber($number);
 	}
-	
-	// purchase a new phone number, return the new number
-	function delete_number($phone_id)
+
+	/**
+	 * Remove a phone number from the current account
+	 *
+	 * @param string $phone_id
+	 * @return bool
+	 */
+	public function delete_number($phone_id)
 	{
-		$rest_url = "Accounts/{$this->twilio_sid}/IncomingPhoneNumbers/$phone_id";
-
-		$response = $this->twilio->request($rest_url, 'DELETE');
-
-		if($response->IsError) throw new VBX_IncomingNumberException($response->ErrorMessage);
-
+		try {
+			$account = OpenVBX::getAccount();
+			$account->incoming_phone_numbers->delete($phone_id);
+		}
+		catch (Exception $e) 
+		{
+			throw new VBX_IncomingNumberException($e->getMessage());
+		}
+	
 		$this->clear_cache();
-
 		return TRUE;
 	}
 
+	protected function clear_cache()
+	{
+		$ci =& get_instance();
+		$ci->api_cache->invalidate(__CLASS__, $ci->tenant->id);
+	}
+	
+	public static function get($params)
+	{
+		if (empty($params['number_sid']) && empty($params['phone_number']))
+		{
+			return false;
+		}
+		
+		$vbx_incoming_numbers = new self;
+		$numbers = $vbx_incoming_numbers->get_numbers();
+		$incoming_number = false;
+		
+		if (!empty($numbers))
+		{
+			foreach ($numbers as $number)
+			{
+				switch (true)
+				{
+					case !empty($params['number_sid']):
+						if ($number->id == $params['number_sid'])
+						{
+							$incoming_number = $number;
+						}
+						break;
+					case !empty($params['phone_number']):
+						if ($number->phone_number == $params['phone_number'])
+						{
+							$incoming_number = $number;
+						}
+						break;
+				}				
+			}
+		}
+		
+		return $incoming_number;
+	}
 }

@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -28,9 +28,10 @@ require_once BASEPATH . '../OpenVBX/libraries/Plugin.php';
 require_once BASEPATH . '../OpenVBX/libraries/AppletUI.php';
 require_once BASEPATH . '../OpenVBX/libraries/OpenVBX.php';
 require_once BASEPATH . '../OpenVBX/libraries/PluginData.php';
-require_once BASEPATH . '../OpenVBX/libraries/PluginStore.php'; // Deprecating in 0.75
+#require_once BASEPATH . '../OpenVBX/libraries/PluginStore.php'; // Deprecated in 0.75
 require_once BASEPATH . '../OpenVBX/libraries/FlowStore.php';
 require_once BASEPATH . '../OpenVBX/libraries/AppletInstance.php';
+require_once BASEPATH . '../OpenVBX/libraries/Caches/Abstract.php';
 
 class MY_Controller extends Controller
 {
@@ -38,45 +39,36 @@ class MY_Controller extends Controller
 	protected $section;
 	protected $request_method;
 	protected $response_type;
-	public $tenant;
 	
+	protected $js_assets = 'js';
+	protected $css_assets = 'css';
+
+	public $tenant;
+
 	public $twilio_sid;
 	public $twilio_token;
 	public $twilio_endpoint;
-	
+
 	public $testing_mode = false;
-	public $domain;
 	
+	protected $suppress_warnings_notices = false;
+
 	public function __construct()
 	{
 		parent::__construct();
-		if($this->config->item('log_errors')) 
-			ini_set('log_errors', 'On');
-		else 
-			ini_set('log_errors', 'Off');
-		
 
-		if($this->config->item('display_errors')) 
-			ini_set('display_errors', 'On');
-		else 
-			ini_set('display_errors', 'Off');
-		
-
-		if($this->config->item('enable_php_notices')) 
-			error_reporting(E_ALL);
-		else
-			error_reporting(E_ALL & ~E_NOTICE);
-		
-		if(!file_exists(APPPATH . 'config/openvbx.php')
-		   || !file_exists(APPPATH . 'config/database.php'))
+		if(!file_exists(APPPATH . 'config/openvbx.php') 
+			|| !file_exists(APPPATH . 'config/database.php'))
 		{
 			redirect('install');
 		}
-		
-		$this->config->load('openvbx');
 
-		// check for required configuration values
+		$this->config->load('openvbx');
 		$this->load->database();
+		
+		$this->cache = OpenVBX_Cache_Abstract::load();
+		$this->api_cache = OpenVBX_Cache_Abstract::load('db');
+		
 		$this->load->model('vbx_settings');
 		$this->load->model('vbx_user');
 		$this->load->model('vbx_group');
@@ -84,65 +76,142 @@ class MY_Controller extends Controller
 		$this->load->model('vbx_flow_store');
 		$this->load->model('vbx_plugin_store');
 		$this->load->helper('file');
-
+		$this->load->helper('twilio');
+		$this->load->library('session');
+		
 		$this->settings = new VBX_Settings();
 
 		$rewrite_enabled = intval($this->settings->get('rewrite_enabled', VBX_PARENT_TENANT));
-		if($rewrite_enabled) {
+		if($rewrite_enabled)
+		{
 			/* For mod_rewrite */
 			$this->config->set_item('index_page', '');
 		}
 
-
-		
 		$this->tenant = $this->settings->get_tenant($this->router->tenant);
+		if(!$this->tenant || !$this->tenant->active)
+		{
+			$this->session->set_userdata('loggedin', 0);
+			$this->session->set_flashdata('error', 'This tenant is no longer active');
+			return redirect(asset_url('auth/logout'));
+		}
+		
+		if ($this->tenant && $this->tenant->url_prefix 
+			&& $this->tenant->url_prefix !== $this->router->tenant)
+		{
+			// case sensitive url faux-pas, redirect to force the url case
+			$this->router->tenant = $this->tenant->url_prefix;
+			return redirect(current_url());
+		}
+
 		if($this->tenant === false)
 		{
 			$this->router->tenant = '';
 			redirect('');
 		}
 
+		$this->set_time_zone();
+
 		$this->testing_mode = !empty($_REQUEST['vbx_testing_key'])? $_REQUEST['vbx_testing_key'] == $this->config->item('testing-key') : false;
 		if($this->tenant)
 		{
-			$this->config->set_item('sess_cookie_name', $this->tenant->id . '-' . $this->config->item('sess_cookie_name'));
-			$this->load->library('session');
+			$this->config->set_item('sess_cookie_name', $this->tenant->id.'-'. 
+										$this->config->item('sess_cookie_name'));
+			
 			$this->twilio_sid = $this->settings->get('twilio_sid', $this->tenant->id);
-			$this->twilio_token = $this->settings->get('twilio_token', $this->tenant->id);
+			$token_from = ($this->tenant->type == VBX_Settings::AUTH_TYPE_CONNECT ? VBX_PARENT_TENANT : $this->tenant->id);
+			$this->twilio_token = $this->settings->get('twilio_token', $token_from);				
+			$this->application_sid = $this->settings->get('application_sid', $this->tenant->id);
+
+			// @deprecated, will be removed in a future release
 			$this->twilio_endpoint = $this->settings->get('twilio_endpoint', VBX_PARENT_TENANT);
 		}
 
 		$this->output->enable_profiler($this->config->item('enable_profiler', false));
-		
+
 		$this->set_response_type();
 		$this->set_request_method();
+
+		if ($this->response_type == 'html') 
+		{
+			$scripts = null;
+			$js_assets = (!empty($this->js_assets) ? $this->js_assets : 'js');
+			if ($this->config->item('use_unminimized_js'))
+			{
+				$scripts = $this->get_assets_list($js_assets);
+				if (is_array($scripts)) {
+					foreach ($scripts as $script)
+					{
+						if ($script) $this->template->add_js($script);
+					}
+				}
+			}
+			else {
+				$this->template->add_js(asset_url('assets/min/?g='.$js_assets), 'absolute');
+			}
+
+			$css_assets = (!empty($this->css_assets) ? $this->css_assets : 'css');
+			if ($this->config->item('use_unminimized_css'))
+			{				
+				$styles = $this->get_assets_list($css_assets);
+				if (is_array($styles)) {
+					foreach ($styles as $style)
+					{
+						if ($style) $this->template->add_css($style);
+					}
+				}
+			} else {
+				$this->template->add_css(asset_url('assets/min/?g='.$css_assets), 'link');
+			}
+		}
 		
-		$scripts = null;
-		if ($this->config->item('use_unminimized_js'))
+		/**
+		 * Controllers can elect to suppress the error reporting - this is mainly to
+		 * keep API & Ajax responses from failing due to Warnings & Notices. Use carefully.
+		 */
+		if ($this->suppress_warnings_notices) {
+			ini_set('display_errors', 'off');
+		}
+	}
+	
+	/**
+	 * Called when no minimizing assets
+	 * Import the minification group definitions & cleanse for direct inclusion
+	 *
+	 * @param string $type 
+	 * @return mixed array | false
+	 */
+	protected function get_assets_list($type) {
+		$_assets = array();
+		if (empty($this->assets)) {
+			$min_config = BASEPATH.'../assets/min/groupsConfig.php';
+			if (is_file($min_config)) {
+				include($min_config);
+				$this->assets = $sources;
+			}
+		}
+		if (isset($this->assets[$type])) {
+			$_assets = $this->assets[$type];
+			foreach ($_assets as &$asset) {
+				$asset = preg_replace('|^(\.\.)|', 'assets', $asset);
+			}
+			return $_assets;
+		}
+		return false;
+	}
+	
+	protected function set_time_zone()
+	{
+		$tz = $this->vbx_settings->get('server_time_zone', $this->tenant->id);
+		if (!empty($tz))
 		{
-			$sources_file = APPPATH . 'assets/j/site-bootstrap.sources';
-			$scripts = explode("\n", file_get_contents(APPPATH . '../assets/j/site-bootstrap.sources'));
-		} else {
-			$scripts = array('site.js');
-		}
-
-		if ($this->config->item('use_unminimized_css'))
+			date_default_timezone_set($tz);
+		} 
+		else 
 		{
-			$sources_file = APPPATH . 'assets/c/site-css.sources';
-			$styles = explode("\n", file_get_contents(APPPATH . '../assets/c/site-css.sources'));
-		} else {
-			$styles = array('site-' . $this->config->item('site_rev') . '.css');
+			date_default_timezone_set(date_default_timezone_get());
 		}
-
-
-		foreach ($scripts as $script) {
-			$this->template->add_js("assets/j/$script");
-		}
-
-        foreach ($styles as $style) {
-			$this->template->add_css("assets/c/$style");
-		}
-    }
+	}
 	
 	protected function set_request_method($method = null)
 	{
@@ -152,26 +221,26 @@ class MY_Controller extends Controller
 			$this->request_method = $method;
 		}
 	}
-	
+
 	protected function set_response_type($type = null)
 	{
-		$version = $this->settings->get('version', 1);
-		
-		header("X-OpenVBX-Version: $version");
+		header('X-OpenVBX-Version: '.OpenVBX::version());
 		if(isset($_SERVER['HTTP_ACCEPT']))
 		{
 			$accepts = explode(',', $_SERVER['HTTP_ACCEPT']);
-			if(in_array('application/json', $accepts)
-			   && strtolower($this->router->class) != 'page') {
+			if(in_array('application/json', $accepts) && strtolower($this->router->class) != 'page') 
+			{
 				header('Content-Type: application/json');
 				$this->response_type = 'json';
 			}
 		}
-		
+
 		if($type)
 		{
 			$this->response_type = $type;
-		} else if(!$this->response_type) {
+		} 
+		else if(!$this->response_type) 
+		{
 			$this->response_type = 'html';
 		}
 	}
@@ -188,6 +257,7 @@ class MY_Controller extends Controller
 		/* Filter out standard templates vars */
 		$json = $this->build_json_response($json);
 		$json_str = json_encode($json);
+		header('content-type: text/javascript');
 		if(!$pprint)
 		{
 			echo $json_str;
@@ -211,7 +281,7 @@ class MY_Controller extends Controller
 			$plugins = array();
 			/* TODO: Properly notify user of malfunction of plugin */
 		}
-		
+
 		$plugin_links = array();
 		foreach($plugins as $plugin)
 		{
@@ -223,48 +293,44 @@ class MY_Controller extends Controller
 			{
 				error_log($e->getMessage());
 				$ci = &get_instance();
-				$ci->session->set_flashdata('error', 'Failed to fetch link information: '.$e->getMessage());
+				$ci->session->set_flashdata('error', 'Failed to fetch link information: '.
+											$e->getMessage());
 			}
 		}
-		
+
 		if(!empty($plugin_links['plugin_menus']))
 		{
 			$nav['plugin_menus'] = $plugin_links['plugin_menus'];
 		}
-		
+
 		if($logged_in)
 		{
 			$nav['util_links'] = array(
-									   'account' => 'My Account',
-									   'auth/logout' => 'Log Out',
-									   );
+				'account' => 'My Account',
+				'auth/logout' => 'Log Out'
+			);
 
 			if(!empty($plugin_links['util_links']))
 			{
-				$nav['util_links'] = array_merge($nav['util_links'],
-												 $plugin_links['util_links']);
-				
+				$nav['util_links'] = array_merge($nav['util_links'], 
+												$plugin_links['util_links']);
 			}
-			
+
 			$nav['setup_links'] = array();
 
 		    $nav['setup_links'] = array(
-								   'devices' => 'Devices',
-								   'voicemail' => 'Voicemail',
-								   );
+				'devices' => 'Devices',
+				'voicemail' => 'Voicemail'
+			);
 
 			if(!empty($plugin_links['setup_links']))
 			{
-				$nav['setup_links'] = array_merge($nav['setup_links'],
-												  $plugin_links['setup_links']);
-				
+				$nav['setup_links'] = array_merge($nav['setup_links'], 
+												$plugin_links['setup_links']);
 			}
-			
 
 			$nav['log_links'] = array();
-
 			$nav['admin_links'] = array();
-
 			$nav['site_admin_links'] = array();
 
 			if($is_admin)
@@ -272,20 +338,20 @@ class MY_Controller extends Controller
 
 				$nav['log_links'] = array(
 										  );
-				
+
 				if(!empty($plugin_links['log_links']))
 				{
 					$nav['log_links'] = array_merge($nav['log_links'],
 												$plugin_links['log_links']);
-					
+
 				}
-			
+
 				$nav['admin_links'] = array(
-										   'flows' => 'Flows',
-										   'numbers' => 'Numbers',
-										   'accounts' => 'Users',
-										   'settings/site' => 'Settings',
-										   );
+					'flows' => 'Flows',
+					'numbers' => 'Numbers',
+					'accounts' => 'Users',
+					'settings/site' => 'Settings'
+				);
 
 				/* Support plugins that used site_admin */
 				if(!empty($plugin_links['site_admin_links']))
@@ -305,7 +371,7 @@ class MY_Controller extends Controller
 
 		return $nav;
 	}
-	
+
 	protected function template_respond($title, $section, $payload, $layout, $layout_dir = 'content')
 	{
 		$this->template->write('title', $title);
@@ -315,24 +381,15 @@ class MY_Controller extends Controller
 			unset($payload['json']);
 		}
 
-		$theme = 'default';
-		if($this->tenant)
-		{
-			$theme = $this->settings->get('theme', $this->tenant->id);
-			if(empty($theme))
-			{
-				$theme = 'default';
-			}
+		$theme = $this->getTheme();
+
+		if (empty($payload['user'])) {
+			$payload['user'] = VBX_user::get(array('id' => $this->session->userdata('user_id')));
 		}
 
 		$css = array("themes/$theme/style");
 
-		$theme_config = @parse_ini_file('assets/themes/'.$theme.'/config.ini');
-		if(!$theme_config)
-		{
-			$theme_config = array();
-			$theme_config['site_title'] = 'VBX';
-		}
+		$theme_config = $this->getThemeConfig($theme);
 
 		$payload['session_id'] = $this->session->userdata('session_id');
 		$payload['theme'] = $theme;
@@ -344,6 +401,7 @@ class MY_Controller extends Controller
 		$payload['site_rev'] = $this->config->item('site_rev');
 		$payload['asset_root'] = ASSET_ROOT;
 		$payload['layout'] = $layout;
+
 		if($layout == 'yui-t2')
 		{
 			$payload['layout_override'] = 'yui-override-main-margin';
@@ -352,12 +410,20 @@ class MY_Controller extends Controller
 		{
 			$payload['layout_override'] = '';
 		}
-		
+
+		if($user = VBX_User::get($this->session->userdata('user_id'))) {
+			if ($user->setting('online') == 9) {
+				$payload['user_online'] = 'client-first-run';
+			}
+			else {
+				$payload['user_online'] = (bool) $user->setting('online');
+			}
+		}
+
 		$navigation = $this->get_navigation($this->session->userdata('loggedin'),
 											$this->session->userdata('is_admin'));
 		$payload = array_merge($payload, $navigation);
 		$payload = $this->template->clean_output($payload);
-
 		$this->template->write_view('wrapper_header', $layout_dir.'/wrapper_header', $payload);
 		$this->template->write_view('header', $layout_dir.'/header', $payload);
 		$this->template->write_view('utility_menu', $layout_dir.'/utility_menu', $payload);
@@ -384,25 +450,25 @@ class MY_Controller extends Controller
 			echo $this->template->render('content');
 			return;
 		}
-		
+
 		return $this->template->render();
 	}
 
 	protected function json_respond_not_implemented($message) {
 		echo json_encode(compact('message'));
 	}
-	
+
 	protected function respond($title, $section, $payload, $layout = 'yui-t2', $layout_dir = 'layout/content')
 	{
-        if(!headers_sent())
-        {
-            $this->session->persist();
-        }
-        else
-        {
-            error_log('Unable to write session, headers already sent');
-        }
-        
+		if(!headers_sent())
+		{
+			$this->session->persist();
+		}
+		else
+		{
+			error_log('Unable to write session, headers already sent');
+		}
+
 		switch($this->response_type)
 		{
 			case 'json':
@@ -423,6 +489,36 @@ class MY_Controller extends Controller
 	public function getTenant()
 	{
 		return $this->tenant;
+	}
+	
+	public function getTheme() {
+		$theme = 'default';
+		
+		if($this->tenant)
+		{
+			$theme_setting = $this->settings->get('theme', $this->tenant->id);
+			if(!empty($theme_setting))
+			{
+				$theme = $theme_setting;
+			}
+		}
+		
+		return $theme;
+	}
+	
+	public function getThemeConfig($theme) {
+		$theme_config = array(
+			'site_title' => 'VBX'
+		);
+		
+		$theme_config_file = 'assets/themes/'.$theme.'/config.ini';
+		if (is_file($theme_config_file)) 
+		{
+			$imported_theme_config = @parse_ini_file($theme_config_file);
+			$theme_config = array_merge($imported_theme_config, $theme_config);
+		}
+		
+		return $theme_config;
 	}
 }
 

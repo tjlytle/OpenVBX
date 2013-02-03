@@ -109,11 +109,12 @@ class AppletInstance
 			
 			if(is_null($list))
 			{
-				return html($default);
+                return $default;
 			}
 
-			return html($list);
+            return $list;
 		}
+
 		return isset(self::$instance->$name)? self::$instance->$name : $default;
 	}
 	public static function getDropZoneValue($name = 'dropZone')
@@ -187,7 +188,7 @@ class AppletInstance
 		$mode = self::getValue($name.'_mode');
 		$say = self::getValue($name.'_say');
 		$play = self::getValue($name.'_play');
-		
+	
 		if ($mode === 'play')
 		{
 			$matches = array();
@@ -195,7 +196,7 @@ class AppletInstance
 			{
 				// This is a locally hosted file, and we need to return the correct
 				// absolute URL for the file.
-				return real_site_url("audio-uploads/" . $matches[1]);
+				return asset_url("audio-uploads/" . $matches[1]);
 			}
 			else
 			{
@@ -205,7 +206,7 @@ class AppletInstance
 		}
 		else if ($mode === 'say')
 		{
-			return htmlentities($say);
+			return $say;
 		}
 		else
 		{
@@ -269,31 +270,36 @@ class AppletInstance
 		self::$baseURI = $baseURI;
 	}
 
+	public static function getBaseURI()
+	{
+		return self::$baseURI;
+	}
+
 	public static function getInstanceId()
 	{
 		return self::$id;
 	}
 
-    public static function assocKeyValueCombine($keys, $values, $case_insensitive = true)
-    {
-        $result = array();
-        /* Filter values and keys to build assoc item pairs */
-        foreach($keys as $key_id => $key)
-        {
-            /* If using the same key over again - it will clobber so warn the user in the logs */
-            $value = isset($values[$key_id])? $values[$key_id] : '';
-            if($case_insensitive)
-            {
-                $key = strtolower($key);
-            }
-            
-            if(isset($result[$key]))
-            {
-                error_log("Clobbering keys in assocKeyValueCombine, Key: $key, Old: {$result[$key]}, New: $value");
-            }
-            $result[$key] = $value;
-        }
-        
-        return $result;
-    }
+	public static function assocKeyValueCombine($keys, $values, $case_insensitive = true)
+	{
+		$result = array();
+		/* Filter values and keys to build assoc item pairs */
+		foreach($keys as $key_id => $key)
+		{
+			/* If using the same key over again - it will clobber so warn the user in the logs */
+			$value = isset($values[$key_id])? $values[$key_id] : '';
+			if($case_insensitive)
+			{
+				$key = strtolower($key);
+			}
+			
+			if(isset($result[$key]))
+			{
+				error_log("Clobbering keys in assocKeyValueCombine, Key: $key, Old: {$result[$key]}, New: $value");
+			}
+			$result[$key] = $value;
+		}
+		
+		return $result;
+	}
 }

@@ -29,10 +29,15 @@ class Page extends User_Controller
 		
 	}
 
-	public function index($page)
+	public function index()
 	{
+		$args = func_get_args();
+		$page = implode('/', $args);
+
 		$this->section = '/p/'.$page;
 		$data = $this->init_view_data();
+
+		$title = '';
 
 		/* Find Plugin matching page */
 		$plugins = Plugin::all();
@@ -42,11 +47,14 @@ class Page extends User_Controller
 			{
 				// First plugin wins
 				$data['script'] = $plugin->getScript($page);
-
 				if(!empty($data['script']))
 				{
 					PluginData::setPluginId($plugin->getPluginId());
 					OpenVBX::$currentPlugin = $plugin;
+					$plugin_info = $plugin->getInfo();
+
+					$page_title = $plugin->getPluginPageName($page);
+					$title = (!empty($page_title) ? $page_title : $plugin_info['name']);
 					break;
 				}
 			}
@@ -56,9 +64,8 @@ class Page extends User_Controller
 				$ci = &get_instance();
 				$ci->session->set_flashdata('error', $e->getMessage());
 			}
-			
 		}
 		
-		$this->respond('', 'page/index', $data);
+		$this->respond($title, 'page/index', $data);
 	}
 }

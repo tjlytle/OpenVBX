@@ -27,13 +27,23 @@ class VBX_Plugin_Store extends MY_Model
 	public $table = 'plugin_store';
 
 	static public $joins = array();
-	static public $select = array('plugin_store.`key`, plugin_store.`value`, plugin_store.`plugin_id`');
+	static public $select = array(
+		'plugin_store.`key`, plugin_store.`value`, plugin_store.`plugin_id`'
+	);
 
-	var $error_prefix = '';
-	var $error_suffix = '';
-	
-	public $fields = array('key', 'value', 'plugin_id');
-	public $natural_keys = array('key', 'plugin_id');
+	public $error_prefix = '';
+	public $error_suffix = '';
+		
+	public $fields = array(
+						'key', 
+						'value', 
+						'plugin_id'
+					);
+					
+	public $natural_keys = array(
+								'key', 
+								'plugin_id'
+							);
 	
 	function __construct($object = null)
 	{
@@ -47,32 +57,55 @@ class VBX_Plugin_Store extends MY_Model
 			return null;
 		}
 
-		if(!(isset($search_options['key'])
-			 && isset($search_options['plugin_id'])))
+		if(!(isset($search_options['key']) && isset($search_options['plugin_id'])))
 		{
-			throw new VBX_PluginException('VBX_Plugin_Store requires key and plugin_id arguments for VBX_Plugin_Store::get()');
+			throw new VBX_PluginException('VBX_Plugin_Store requires key and plugin_id '.
+											'arguments for VBX_Plugin_Store::get()');
 		}
 		
-		return self::search($search_options,
-							1,
-							0);
+		return self::search($search_options, 1, 0);
 	}
 	
 	static function search($search_options = array(), $limit = -1, $offset = 0)
 	{
-		$sql_options = array('joins' => self::$joins,
-							 'select' => self::$select,
-							 );
+		$sql_options = array(
+			'joins' => self::$joins,
+			'select' => self::$select,
+		);
 		$store = new self();
 		
-		$values = parent::search(self::$__CLASS__,
-								  $store->table,
-								  $search_options,
-								  $sql_options,
-								  $limit,
-								  $offset);
+		$values = parent::search(
+			self::$__CLASS__,
+			$store->table,
+			$search_options,
+			$sql_options,
+			$limit,
+			$offset
+		);
 
 		return $values;
 	}
 
+	public function __get($name)
+	{
+		if ($name == 'id')
+		{
+			return $this->_id();
+		}
+		else {
+			return parent::__get($name);
+		}
+	}
+	
+	/**
+	 * This is a haxie to get caching to work properly with PluginData.
+	 * Caching stores items by ID but PluginData objects have a compound
+	 * id, not a unique auto-increment id like everything else.
+	 *
+	 * @return string
+	 */
+	protected function _id()
+	{
+		return $this->values['key'].$this->values['plugin_id'];
+	}
 }

@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -27,7 +27,7 @@ class Devices extends User_Controller {
 	protected $request;
 
 	private $data = array();
-	
+
 	public function __construct()
 	{
 		parent::__construct();
@@ -38,8 +38,6 @@ class Devices extends User_Controller {
 
 	public function index()
 	{
-		if (!$this->session->userdata('loggedin')) redirect('auth/login');
-
 		$this->template->add_js('assets/j/account.js');
 		$this->template->add_js('assets/j/devices.js');
 
@@ -47,9 +45,7 @@ class Devices extends User_Controller {
 		$user = VBX_user::get(array('id' => $this->user_id));
 		$data['user'] = $user;
 		
-		$numbers = $this->vbx_device->get_by_user($this->user_id);
-		$data['numbers'] = $numbers;
-		$data['devices'] = $this->vbx_device->get_by_user($this->user_id);
+		$data['numbers'] = $data['devices'] = $user->devices;
 		if(empty($data['devices']))
 		{
 			set_banner('devices',
@@ -57,14 +53,12 @@ class Devices extends User_Controller {
 					   'Add a device below.'
 					   );
 		}
-		
+
 		return $this->respond('', 'devices', $data);
 	}
 
 	public function edit()
 	{
-		if (!$this->session->userdata('loggedin')) redirect('auth/login');
-
 		$is_admin = $this->session->userdata('is_admin');
 		$user = new VBX_User();
 		$params = array();
@@ -79,7 +73,7 @@ class Devices extends User_Controller {
 			{
 				if($val) $params[$field] = $val;
 			}
-			
+
 			// The value for some fields should also be saved to the session
 			if ($field === 'email')
 			{
@@ -96,48 +90,6 @@ class Devices extends User_Controller {
 		}
 	}
 
-	public function password()
-	{
-		if (!$this->session->userdata('loggedin')) redirect('auth/login');
-
-		$user = VBX_user::get(array('id' => $this->user_id));
-
-		$old_pw = $this->input->post('old_pw');
-		$new_pw = $this->input->post('new_pw1');
-		$new_pw2 = $this->input->post('new_pw2');
-		$this->data['error'] = false;
-		$message = '';
-
-		if($user->password != VBX_User::salt_encrypt($old_pw))
-		{
-			$this->data['error'] = true;
-			$message = 'Password incorrect';
-		}
-		else if($new_pw != $new_pw2)
-		{
-			$this->data['error'] = true;
-			$message = 'Password mismatch';
-		}
-		else
-		{
-			$user->password = VBX_User::salt_encrypt($new_pw);
-            try
-            {
-                $user->save();
-				$message = 'Password changed';
-			}
-			catch(VBX_UserException $e)
-			{
-				$this->data['error'] = true;
-				$message = 'Unable to set password, please try again later.';
-                error_log($e->getMessage());
-			}
-		}
-		$this->data['message'] = $message;
-
-		echo json_encode($this->data);
-	}
-
 	public function number($key = 0)
 	{
 		switch($key)
@@ -148,7 +100,21 @@ class Devices extends User_Controller {
 				return $this->number_handler($key);
 		}
 	}
-	
+
+	public function send_iphone_guide() {
+		$user = VBX_user::get(array('id' => $this->user_id));
+		$this->data = array('error' => false, 'message' => 'OK');
+
+
+		openvbx_mail($user->email,
+					 "iPhone installation Guide",
+					 'iphone-guide',
+					 array('email' => $user->email));
+
+
+		echo json_encode($this->data);
+	}
+
 	private function number_handler($id)
 	{
 		switch($this->request_method) {
@@ -175,7 +141,7 @@ class Devices extends User_Controller {
 	{
 		$data['json'] = array('error' => false,
 							  'message' => '');
-		
+
 		$number = $this->input->post('device');
 		$device = VBX_Device::get($device_id);
 		if(isset($number['value']))
@@ -187,19 +153,19 @@ class Devices extends User_Controller {
 		{
 			$device->sms = intval($number['sms']) == 0? 0 : 1;
 		}
-		
+
 		if(isset($number['is_active']))
 		{
 			$device->is_active = intval($number['is_active']) == 0? 0 : 1;
 		}
-		
+
 		try
 		{
 			$device->save();
 		}
 		catch(VBX_DeviceException $e)
 		{
-            error_log($e->getMessage());
+			error_log($e->getMessage());
 			$device['json']['error'] = true;
 			$device['json']['message'] = 'Unable to update device settings';
 		}
@@ -208,14 +174,14 @@ class Devices extends User_Controller {
 		{
 			redirect('account#devices');
 		}
-		
+
 		$this->respond('', 'account/number', $data);
 	}
 
 	private function update_order()
 	{
 		$data['json'] = array('error' => false, 'message' => '');
-		
+
 		$order = $this->input->post('order');
 		try
 		{
@@ -231,14 +197,14 @@ class Devices extends User_Controller {
 				$device->sequence = $sequence;
 				$device->save();
 			}
-			
+
 		}
 		catch(VBX_DeviceException $e)
 		{
 			$data['json']['error'] = true;
 			$data['json']['message'] = 'One or more device sequences were not updated';
 		}
-		
+
 		if($this->response_type == 'html')
 		{
 			return redirect('account/number');
@@ -279,14 +245,14 @@ class Devices extends User_Controller {
 							  'message' => $e->getMessage(),
 							  );
 		}
-		
+
 		$data['json'] = $response;
 
 		if($this->response_type == 'html')
 		{
 			redirect('account');
 		}
-		
+
 		return $this->respond('', 'account', $data);
 	}
 
@@ -300,7 +266,7 @@ class Devices extends User_Controller {
 		{
 			try
 			{
-				$this->vbx_device->delete($id, $this->user_id);
+				$number->delete();
 			}
 			catch(VBX_DeviceException $e)
 			{
@@ -319,8 +285,49 @@ class Devices extends User_Controller {
 		{
 			echo 'test';exit;
 		}
-		
+
 		$data['json'] = $response;
 		return $this->respond('', 'account', $data);
+	}
+	
+	/**
+	 * Refresh the user's devices list in the dialer
+	 *
+	 * @return json
+	 */
+	public function refresh_dialer() {
+		$user = VBX_User::get(array('id' => $this->session->userdata('user_id')));
+		$browserphone = array(
+			'call_using_options' => array()
+		);
+		if (count($user->devices)) 
+		{
+			foreach ($user->devices as $device)
+			{
+				if (strpos($device->value, 'client:') !== false)
+				{
+					continue;
+				}
+				$browserphone['call_using_options']['device:'.$device->id] = array(
+					'title' => 'Device: '.$device->name,
+					'data' => (object) array(
+						'number' => format_phone($device->value),
+						'name' => $device->name
+					)
+				);
+			}
+		}
+		
+		$data = array(
+			'browserphone' => $browserphone
+		);
+
+		$html = $this->load->view('dialer/devices', $data, true);
+		
+		$response['json'] = array(
+			'error' => false,
+			'html' => $html
+		);
+		$this->respond('', 'dialer/devices', $response);
 	}
 }

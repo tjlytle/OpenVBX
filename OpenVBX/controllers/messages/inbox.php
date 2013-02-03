@@ -69,20 +69,19 @@ class Inbox extends User_Controller {
 			$folders[$group] = $inbox_counts[$group];
 		}
 		
-		$data['active_users'] = $this->vbx_user->get_active_users();
+		$data['active_users'] = VBX_User::search(array('is_active' => 1));
 		
-		$users = ($group == 0)? array($this->user_id) : array();
+		$users = ($group == 0) ? array($this->user_id) : array();
 		$items = array();
 		$message_options = array(
-								 'group' => $groups,
-								 'user' => $users,
-								 );
+			 'group' => $groups,
+			 'user' => $users
+		 );
 		
 		$messages = $this->vbx_message->get_messages($message_options,
 													 $offset,
 													 $max);
 		
-
 		uasort($messages['messages'], 'sort_by_date');
 		foreach($messages['messages'] as $item)
 		{
@@ -127,26 +126,26 @@ class Inbox extends User_Controller {
 			}
 				
 			$items[] = array(
-							 'id' => $item->id,
-							 'folder' => $group_name,
-							 'folder_id' => $group_id,
-							 'short_summary' => $short_summary,
-							 'assigned' => $item->assigned_to,
-							 'type' => $item->type,
-							 'assigned_user' => $assigned_user,
-							 'ticket_status' => $item->ticket_status,
-							 'archived' => ($item->status == 'archived')? true : false,
-							 'unread' => ($item->status == 'new')? true : false,
-							 'recording_url' => $item->content_url,
-							 'recording_length' => format_player_time($item->size),
-							 'received_time' => $date_recorded,
-							 'last_updated' => $date_updated,
-							 'called' => format_phone($item->called),
-							 'caller' => format_phone($item->caller),
-							 'original_called' => $item->called,
-							 'original_caller' => $item->caller,
-							 'owner_type' => $item->owner_type,
-							 );
+				'id' => $item->id,
+				'folder' => $group_name,
+				'folder_id' => $group_id,
+				'short_summary' => $short_summary,
+				'assigned' => $item->assigned_to,
+				'type' => $item->type,
+				'assigned_user' => $assigned_user,
+				'ticket_status' => $item->ticket_status,
+				'archived' => ($item->status == 'archived')? true : false,
+				'unread' => ($item->status == 'new')? true : false,
+				'recording_url' => $item->content_url,
+				'recording_length' => format_player_time($item->size),
+				'received_time' => $date_recorded,
+				'last_updated' => $date_updated,
+				'called' => format_phone($item->called),
+				'caller' => format_phone($item->caller),
+				'original_called' => $item->called,
+				'original_caller' => $item->caller,
+				'owner_type' => $item->owner_type,
+			);
 
 		}
 
@@ -160,8 +159,15 @@ class Inbox extends User_Controller {
 		
 		$data = array_merge($data, compact('messageIdsToRecordingURLs'));
 
+		$messageIdsJson = json_encode($messageIdsToRecordingURLs);
+		if (empty($messageIdsJson)) {
+			$messageIdsJson = '{}';
+		}
+
 		/* TODO: implement JS responding */
-		echo "$(document).ready(function(){ Message.Player.messageIdsToRecordingURLs = ".json_encode($messageIdsToRecordingURLs)."; });";
+		header('content-type: text/javascript');
+		echo "$(document).ready(function(){ Message.Player.messageIdsToRecordingURLs = ".
+				$messageIdsJson."; });";
 	}
 
 	function index($group = false)
@@ -173,13 +179,14 @@ class Inbox extends User_Controller {
 	{
 		$max = $this->input->get_post('max');
 		$offset = $this->input->get_post('offset');
-		
+		$do_transcriptions = $this->vbx_settings->get('transcriptions', $this->tenant->id);
+
 		if(!$max)
 		{
 			$max = self::PAGE_SIZE;
 		}
 		
-		$this->template->add_css('assets/c/messages.css');
+		$this->template->add_css(asset_url('assets/c/messages.css'), 'link');
 		$data = $this->init_view_data();
 		$inbox_counts = $data['counts'];
 
@@ -189,7 +196,8 @@ class Inbox extends User_Controller {
 			return;
 		}
 
-		$this->template->add_js('messages/scripts'.($group? '/'.$group : '').'?'.http_build_query(compact('max', 'offset')), 'dynamic');
+		$this->template->add_js('messages/scripts'.($group? '/'.$group : '').'?'.
+									http_build_query(compact('max', 'offset')), 'dynamic');
 		
 		$data['group'] = $group;
 		$total_items = 0;
@@ -221,7 +229,8 @@ class Inbox extends User_Controller {
 		$this->load->library('pagination');
 		$group_name = '';
 		
-		$data['active_users'] = $this->vbx_user->get_active_users();
+		$data['active_users'] = VBX_User::search(array('is_active' => 1));
+		
 		if($messages['total'] < 1)
 		{
 			$group_name = $inbox_counts[$group]->name;
@@ -252,7 +261,11 @@ class Inbox extends User_Controller {
 				
 				if (is_null($item->content_text))
 				{
-					$short_summary = "(no transcription)";
+					$short_summary = '&nbsp;';
+					if ($do_transcriptions)
+					{
+						$short_summary = "(no transcription)";
+					}
 				}
 				else
 				{
@@ -260,8 +273,8 @@ class Inbox extends User_Controller {
 						 . ((strlen($item->content_text) > 125)? '...' : '');
 				}
 					
-				$date_recorded = date('c', strtotime($item->created));
-				$date_updated = date('c', strtotime($item->updated));
+				$date_recorded = date('Y-M-d\TH:i:s+00:00', strtotime($item->created));
+				$date_updated = date('Y-M-d\TH:i:s+00:00', strtotime($item->updated));
 
 				$assigned_user = null;
 				foreach($data['active_users'] as $u)
@@ -309,6 +322,7 @@ class Inbox extends User_Controller {
 		$data['items'] = $json['messages']['items'] = $items;
 		// render to output array
 		$data['pagination'] = CI_Template::literal($this->pagination->create_links());
+		$data['transcribe'] = $do_transcriptions;
 
 		/* Return current group */
 		if($group !== false && $group >= 0)
@@ -355,7 +369,8 @@ class Inbox extends User_Controller {
 			}
 			redirect('messages');
 		} else {
-			$this->vbx_message->mark_read($message->id, $this->user_id);		// set message read flag
+			// set message read flag
+			$this->vbx_message->mark_read($message->id, $this->user_id);		
 			$message->caller = format_phone($message->caller);
 			$accepts = split(',', $_SERVER['HTTP_ACCEPT']);
 			if(in_array('application/json', $accepts))

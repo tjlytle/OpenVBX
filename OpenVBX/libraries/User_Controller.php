@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -28,64 +28,28 @@ class User_Controller extends MY_Controller
 	protected $section;
 	protected $request_method;
 	protected $response_type;
-	public $twilio_sid;
-	public $twilio_token;
-	public $twilio_endpoint;
-	
+
 	public $testing_mode = false;
-	public $domain;
-	
+
+	public $capability;
+
 	public function __construct()
 	{
-		// This is to support SWFUpload.  SWFUpload will scrape all cookies via Javascript and send them
-		// as POST request params.	This enables the file uploader to work with a proper session.
-		foreach ($_POST as $key => $value)
-		{
-			// Copy any key that looks like an Openvbx session over to $_COOKIE where it's expected
-			if (preg_match("/^\d+\-openvbx_session$/", $key))
-			{
-				$_COOKIE[$key] = urldecode($_POST[$key]);
-			}
-		}
-		
 		parent::__construct();
+		$this->config_check();
 
-		if(!file_exists(APPPATH . 'config/openvbx.php')
-		   || !file_exists(APPPATH . 'config/database.php'))
-		{
-			redirect('install');
-		}
-		
 		$this->config->load('openvbx');
 
 		// check for required configuration values
 		$this->load->database();
-		$this->load->library('ErrorMessages');
+		$this->load->library('ErrorMessages'); // deprecated in 1.2
 		$this->load->model('vbx_rest_access');
 		$this->load->model('vbx_message');
-		
-		$this->tenant = $this->settings->get_tenant($this->router->tenant);
-		if($this->tenant === false)
-		{
-			$this->router->tenant = '';
-			return redirect('');
-		}
 
 		// When we're in testing mode, allow access to set Hiccup configuration
 		$this->testing_mode = !empty($_REQUEST['vbx_testing_key'])? $_REQUEST['vbx_testing_key'] == $this->config->item('testing-key') : false;
 		$this->config->set_item('sess_cookie_name', $this->tenant->id . '-' . $this->config->item('sess_cookie_name'));
 		$this->load->library('session');
-		$this->twilio_sid = $this->settings->get('twilio_sid', $this->tenant->id);
-		$this->twilio_token = $this->settings->get('twilio_token', $this->tenant->id);
-		$this->twilio_endpoint = $this->settings->get('twilio_endpoint', VBX_PARENT_TENANT);
-		
-		if(!$this->tenant->active)
-		{
-			$this->session->set_userdata('loggedin', 0);
-			$this->session->set_flashdata('error', 'This tenant is no longer active');
-			return redirect('auth/logout');
-		}
-
 
 		$keys = array('base_url', 'salt');
 		foreach($keys as $key)
@@ -111,16 +75,14 @@ class User_Controller extends MY_Controller
 				$this->session->set_userdata('signature', VBX_User::signature($user_id));
 			}
 		}
-		
+
 		$user_id = $this->session->userdata('user_id');
 
-		/* Signature check */
+		// Signature check
 		if (!empty($user_id))
 		{
-			$expected_signature = VBX_User::signature($user_id);
-			$actual_signature = $this->session->userdata('signature');
-			
-			if ($expected_signature != $actual_signature)
+			$signature = $this->session->userdata('signature');
+			if (!VBX_User::check_signature($user_id, $signature))
 			{
 				$this->session->set_flashdata('error', 'Your session has expired');
 				$this->session->set_userdata('loggedin', false);
@@ -131,12 +93,18 @@ class User_Controller extends MY_Controller
 		{
 			$this->attempt_digest_auth();
 		}
-		
+
 		if (!$this->session->userdata('loggedin') && $this->response_type != 'json')
 		{
-			return redirect('auth/login?redirect='.urlencode(uri_string()));
+			$redirect = site_url($this->uri->uri_string());
+			if (!empty($_COOKIE['last_known_url']))
+			{
+				$redirect = $_COOKIE['last_known_url'];
+				set_last_known_url('', time() - 3600);
+			}
+			return redirect('auth/login?redirect='.urlencode($redirect));
 		}
-		
+
 		$this->user_id = $this->session->userdata('user_id');
 		$this->set_request_method();
 
@@ -146,9 +114,7 @@ class User_Controller extends MY_Controller
 			try
 			{
 				$user = VBX_User::get($this->user_id);
-				$last_seen = $user->last_seen;
-				$user->last_seen = new MY_ModelLiteral('UTC_TIMESTAMP()');
-				$user->save();
+				$user->setting_set('last_seen', new MY_ModelLiteral('UTC_TIMESTAMP()'));
 			}
 			catch(VBX_UserException $e)
 			{
@@ -156,11 +122,20 @@ class User_Controller extends MY_Controller
 				error_log($e->getMessage());
 			}
 
+			$this->connect_check();
+
+			/* Check for first run */
+			if ($this->session->userdata('is_admin') && $this->uri->segment(1) != 'welcome') 
+			{
+				$this->welcome_check();
+			}
+
 			/* Check for updates if an admin */
 			if($this->session->userdata('is_admin') && $this->uri->segment(1) != "upgrade")
 			{
 				$this->upgrade_check();
 			}
+
 		}
 	}
 
@@ -169,12 +144,61 @@ class User_Controller extends MY_Controller
 		redirect($url);
 	}
 
+	private function config_check()
+	{
+		$vbx_config = APPPATH.'config/openvbx.php';
+		$db_config = APPPATH.'config/database.php';
+		if(!file_exists($vbx_config) || !file_exists($db_config))
+		{
+			redirect('install');
+		}
+	}
+
 	private function upgrade_check()
 	{
-		$currentSchemaVersion = OpenVBX::schemaVersion();
+		$currentSchemaVersion = OpenVBX::schemaVersion(false);
 		$upgradingToSchemaVersion = OpenVBX::getLatestSchemaVersion();
 		if($currentSchemaVersion != $upgradingToSchemaVersion)
+		{
 			redirect('upgrade');
+		}
+	}
+	
+	private function welcome_check() 
+	{
+		if ($this->router->class == 'iframe' || $this->router->class == 'welcome') 
+		{
+			return false;
+		}
+		
+		if ($this->settings->get('tenant_first_run', $this->tenant->id)) 
+		{
+			redirect('welcome');
+		}
+	}
+	
+	private function connect_check() {
+		$section = $this->uri->segment(1);
+		if (!in_array($section, array('welcome', 'auth', 'connect')))
+		{
+			if ($this->twilio_sid == 'unauthorized_client') 
+			{				
+				$redirect_path = 'welcome';
+			}
+		
+			if ($this->twilio_sid == 'deauthorized_client') {
+				if ($this->session->userdata('is_admin')) {
+					$redirect_path = 'welcome';
+				}
+				else {
+					$redirect_path = 'auth/connect/account_deauthorized';
+				}
+			}
+		
+			if (!empty($redirect_path)) {
+				redirect($redirect_path);
+			}	
+		}
 	}
 
 	function digest_parse($digest)
@@ -182,7 +206,7 @@ class User_Controller extends MY_Controller
 		// protect against missing data
 		$needed_parts = array('nonce'=>1, 'nc'=>1, 'cnonce'=>1, 'qop'=>1, 'username'=>1, 'uri'=>1, 'response'=>1);
 		$data = array();
-		
+
 		preg_match_all('@(\w+)=(?:(?:\'([^\']+)\'|"([^"]+)")|([^\s,]+))@', $digest, $matches, PREG_SET_ORDER);
 
 		foreach ($matches as $m) {
@@ -192,28 +216,46 @@ class User_Controller extends MY_Controller
 
 		return $needed_parts ? false : $data;
 	}
-	
 
-	function attempt_digest_auth() {
+
+	function attempt_digest_auth() 
+	{
 		$message = '';
 
 		if(isset($_SERVER['Authorization'])) {
 			// Just in case they ever fix Apache to send the Authorization header on, the following code is included
 			$headers['Authorization'] = $_SERVER['Authorization'];
 		}
-		
+
 		if(function_exists('apache_request_headers')) {
 			// We are running PHP as an Apache module, so we can get the Authorization header this way
 			$headers = apache_request_headers();
 		}
-		
+
+		// Support cgi based auth via rewrite hack:
+		// ---------------------
+		// RewriteEngine on
+		// RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization},L]
+		// $_SERVER['PHP_AUTH_USER'] = '';
+		// $_SERVER['PHP_AUTH_PW'] = '';
+		if(isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+			$_SERVER['HTTP_AUTHORIZATION'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+		}
+
+		if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+			if(preg_match('/Basic (.*)$/', $_SERVER['HTTP_AUTHORIZATION'], $matches))
+				list($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW']) =
+					explode(':', base64_decode(substr($_SERVER['HTTP_AUTHORIZATION'], 6)));
+
+		}
+
+		// Support standard PHP Authorization magic with apache
 		if(isset($_SERVER['PHP_AUTH_USER']) && isset($_SERVER['PHP_AUTH_PW'])) {
 			// Basic authentication information can be retrieved from these server variables
 			$username = $_SERVER['PHP_AUTH_USER'];
 			$password = $_SERVER['PHP_AUTH_PW'];
 		}
-		
-		
+
 		if(isset($headers['Authorization'])) {
 			$_SERVER['PHP_AUTH_DIGEST'] = $headers['Authorization'];
 			$data = $this->digest_parse($_SERVER['PHP_AUTH_DIGEST']);
@@ -230,26 +272,23 @@ class User_Controller extends MY_Controller
 		{
 			$captcha_token = $headers['CaptchaToken'];
 		}
-		
-		if (isset($username)
-			&& isset($password))
+
+		if (isset($username) && isset($password))
 		{
-			log_message('info', 'Authenticating user: '.var_export($username, true));
-			
-			$u = VBX_User::authenticate($username,
-										$password,
-										$captcha,
-										$captcha_token);
+			log_message('info', 'Logging in user: '.var_export($username, true));
+
+			$u = VBX_User::login($username, $password, $captcha, $captcha_token);
 			if($u)
 			{
 				$next = $this->session->userdata('next');
 				$this->session->unset_userdata('next');
-				$userdata = array('email' => $u->email,
-								  'user_id' => $u->id,
-								  'is_admin' => $u->is_admin,
-								  'loggedin' => TRUE,
-								  'signature' => VBX_User::signature($u->id),
-								  );
+				$userdata = array(
+					'email' => $u->email,
+					'user_id' => $u->id,
+					'is_admin' => $u->is_admin,
+					'loggedin' => TRUE,
+					'signature' => VBX_User::signature($u->id),
+				);
 
 				$this->session->set_userdata($userdata);
 			}
@@ -278,50 +317,57 @@ class User_Controller extends MY_Controller
 	protected function init_view_data($full_view = true)
 	{
 		$data = array();
-		
+
 		if($full_view)
 		{
 			$data['counts'] = $counts = $this->message_counts();
 		}
+		
 		try
 		{
 			$data['callerid_numbers'] = $this->get_twilio_numbers();
 		}
 		catch(User_ControllerException $e)
 		{
+			// @todo - set a "same page view" error message
 			// $this->session->set_flashdata('error', $e->getMessage());
 			error_log($e->getMessage());
 		}
-		
+
 		$data['user_numbers'] = $this->get_user_numbers();
 		$data['error'] = $this->session->flashdata('error');
 		if(!empty($data['error']))
+		{
 			log_message('error', $data['error']);
+		}
 		$data['section'] = $this->section;
+		
 		return $data;
 	}
 
-	protected function get_user_numbers() {
-
+	protected function get_user_numbers() 
+	{
 		$this->load->model('vbx_device');
 		$numbers = $this->vbx_device->get_by_user($this->user_id);
-		
+
 		return $numbers;
 	}
 
-	protected function message_counts() {
+	protected function message_counts() 
+	{
 		$groups = VBX_User::get_group_ids($this->user_id);
 		$counts = $this->vbx_message->get_folders($this->user_id, $groups);
 		return $counts;
 	}
 
-	protected function get_twilio_numbers() {
+	protected function get_twilio_numbers() 
+	{
 		$this->load->model('vbx_incoming_numbers');
 		$numbers = array();
 		try
 		{
 			/* Retrieve twilio numbers w/o sandbox */
-			$numbers = $this->vbx_incoming_numbers->get_numbers(false);
+			$numbers = $this->vbx_incoming_numbers->get_numbers();
 		}
 		catch(VBX_IncomingNumberException $e)
 		{
@@ -332,7 +378,7 @@ class User_Controller extends MY_Controller
 
 		return $numbers;
 	}
-	
+
 	/* Used to give access to internals via rest-based calls */
 	protected function make_rest_access()
 	{
@@ -345,5 +391,4 @@ class User_Controller extends MY_Controller
 	{
 		return $this->tenant;
 	}
-
 }

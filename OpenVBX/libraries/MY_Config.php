@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -21,6 +21,13 @@
 
 class MY_Config extends CI_Config
 {
+
+	CONST REGEX_REPLACE_DOUBLE_SLASH = '!([^:\s]{1})(//+)!';
+
+	public static function url_trim($url) {
+	    return preg_replace('!([^:\s]{1})(//+)!', '$1/', $url);
+	}
+
 	public function site_url($url)
 	{
 		$ci = &get_instance();
@@ -28,13 +35,13 @@ class MY_Config extends CI_Config
 		{
 			$url = $ci->router->tenant . '/' . $url;
 		}
-		
-		return parent::site_url($url);
+
+		return self::url_trim(parent::site_url($url));
 	}
 
 	public function real_site_url($uri)
 	{
-		return parent::site_url($uri);
+		return self::url_trim(parent::site_url($uri));
 	}
 }
 
@@ -51,18 +58,31 @@ function asset_url($uri)
 	$index_page = $CI->config->item('index_page');
 	if(strlen($index_page))
 	{
-		$test = str_replace($index_page, '', $url);
-		return $test;
+		$url = str_replace('/'.$index_page, '', $url);
 	}
-	
+
 	return $url;
 }
 
-function tenant_url($uri, $tenant_id)
+function iphone_handler_url($uri)
+{
+	$CI =& get_instance();
+	return 'openvbx://'.$CI->config->item('server_name').'/'.$uri;
+}
+
+function tenant_url($uri, $tenant_id = NULL)
 {
 	$CI = & get_instance();
+	if(!$tenant_id)
+		$tenant_id = $CI->tenant->id;
 	$tenant = $CI->settings->get_tenant_by_id($tenant_id);
 	return $CI->config->real_site_url($tenant->url_prefix . '/' . $uri);
+}
+	
+function current_url()
+{
+	$CI =& get_instance();
+	return $CI->config->site_url($CI->uri->uri_string());
 }
 
 function redirect($uri = '', $method = 'location', $http_response_code = 302)
@@ -79,12 +99,12 @@ function redirect($uri = '', $method = 'location', $http_response_code = 302)
 	{
 		error_log('Unable to write session, headers already sent');
 	}
-	
+
 	if ( ! preg_match('#^https?://#i', $uri))
 	{
 		$uri = site_url($uri);
 	}
-		
+
 	switch($method)
 	{
 		case 'refresh'	: header("Refresh:0;url=".$uri);
@@ -94,6 +114,5 @@ function redirect($uri = '', $method = 'location', $http_response_code = 302)
 	}
 	exit;
 }
-
 
 ?>

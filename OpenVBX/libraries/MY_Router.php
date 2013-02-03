@@ -171,16 +171,17 @@ class MY_Router extends CI_Router
 	function _validate_request($segments)
 	{
 		// Does the requested controller exist in the root folder?
-		if (file_exists(APPPATH.'controllers/'.$segments[0].EXT))
+		if (!empty($segments[0]) && file_exists(APPPATH.'controllers/'.$segments[0].EXT))
 		{
 			return $segments;
 		}
 
 		// Is the controller in a sub-folder?
-		if (is_dir(APPPATH.'controllers/'.$segments[0]))
+		$segment = (!empty($segments[0])) ? $segments[0] : null;
+		if (is_dir(APPPATH.'controllers/'.$segment))
 		{		
 			// Set the directory and remove it from the segment array
-			$this->set_directory($segments[0]);
+			$this->set_directory($segment);
 			$segments = array_slice($segments, 1);
 			
 			if (count($segments) > 0)
@@ -209,7 +210,7 @@ class MY_Router extends CI_Router
 		}
 
 		// Can't find the requested controller...
-		show_404($segments[0]);
+		show_404($segment);
 	}
 	
 	private function _parse_segments($rel_segments, $segments) 
@@ -268,13 +269,11 @@ class MY_Router extends CI_Router
 		{
 			$api = $segments[0];
 			$api_version = $segments[1];
-			
 			$segments = array_slice($segments, 2);
 			$this->set_api_version($api_version);
-
 			$this->uri->segments = $segments;
 		}
-		
+
 		if(($tenant_segments = $this->_validate_tenant($segments)))
 		{
 			$tenant = $segments[0];
@@ -282,12 +281,8 @@ class MY_Router extends CI_Router
 			$this->set_tenant($tenant);
 			if(empty($segments))
 			{
-				$this->set_directory('messages');
-				$segments[0] = 'messages';
-				$segments[1] = 'message_index';
-				$segments[2] = 'index';
-				
-				$this->uri->segments = $segments;
+				$this->set_directory('iframe');
+				$this->uri->segments = array();
 			}
 			else
 			{
@@ -336,9 +331,9 @@ class MY_Router extends CI_Router
 				return;
 			}
 		}
+
 		// If we got this far it means we didn't encounter a
 		// matching route so we'll set the site default route
 		$this->_set_request($this->uri->segments);
 	}
-
 }

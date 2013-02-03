@@ -46,18 +46,18 @@ function applet_dropdown($name = '', $options = array(), $selected = array(), $e
 	{
 		$key = (string) $key;
 
-		$key = htmlspecialchars($key);
-		$val = htmlspecialchars($val);
-            
+		$key = htmlspecialchars($key, ENT_COMPAT, 'UTF-8', false);
+		$val = htmlspecialchars($val, ENT_COMPAT, 'UTF-8', false);
+			
 		if (is_array($val))
 		{
 			$form .= '<optgroup label="'.$key.'">'."\n";
 
 			foreach ($val as $optgroup_key => $optgroup_val)
 			{
-				$optgroup_key = htmlspecialchars($optgroup_key);
-				$optgroup_val = htmlspecialchars($optgroup_val);
-                    
+				$optgroup_key = htmlspecialchars($optgroup_key, ENT_COMPAT, 'UTF-8', false);
+				$optgroup_val = htmlspecialchars($optgroup_val, ENT_COMPAT, 'UTF-8', false);
+					
 				$sel = (in_array($optgroup_key, $selected)) ? ' selected="selected"' : '';
 
 				$form .= '<option value="'.$optgroup_key.'"'.$sel.'>'.(string) $optgroup_val."</option>\n";

@@ -44,10 +44,17 @@ $(document).ready(function() {
 			return _hash;
 		};
 
-		$(window).hashchange( function() { $('a[href=#'+hash()+']').click(); } );
+		$(window).hashchange( function() { $('a[href="#'+hash()+'"]').click(); } );
 		$(window).trigger( "hashchange" );
-		$('a[href=#'+hash()+']').click();
+		$('a[href="#'+hash()+'"]').click();
 		history.navigationMode = 'compatible';
 
+	});
+	
+	$('#settings-country-select select').live('change', function() {
+		var select = $(this),
+			img = $(this).siblings('img'),
+			imgpath = '/assets/i/countries/' + select.val().toLowerCase() + '.png';
+			img.attr('src', OpenVBX.assets + imgpath);
 	});
 });

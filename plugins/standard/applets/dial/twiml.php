@@ -1,226 +1,81 @@
 <?php
-/* State Types */
-
-// We use the number index to move sequentially through the list of the numbers we'll be dialing
-define('DIAL_NUMBER_INDEX', 'dialNumberIndex');
-define('DIAL_ACTION', 'dialAction');
+include_once('TwimlDial.php');
 define('DIAL_COOKIE', 'state-'.AppletInstance::getInstanceId());
 
-/* States */
-define('DIAL_STATE_DIAL', 'dialStateDial');
-define('DIAL_STATE_NO_ANSWER', 'dialStateNoAnswer');
-define('DIAL_STATE_RECORDING', 'dialStateRecording');
-define('DIAL_STATE_HANGUP', 'dialStateHangup');
+$CI =& get_instance();
+$CI->load->library('DialList');
+$transcribe = (bool) $CI->vbx_settings->get('transcriptions', $CI->tenant->id);
+$voice = $CI->vbx_settings->get('voice', $CI->tenant->id);
+$language = $CI->vbx_settings->get('voice_language', $CI->tenant->id);
+$timeout = $CI->vbx_settings->get('dial_timeout', $CI->tenant->id);
 
-$response = new Response();
+$dialer = new TwimlDial(array(
+	'transcribe' => $transcribe,
+	'voice' => $voice,
+	'language' => $language,
+	'sequential' => true,
+	'timeout' => $timeout
+));
+$dialer->set_state();
 
-// Default State
-$state = array();
-$state[DIAL_ACTION] = DIAL_STATE_DIAL;
-$state[DIAL_NUMBER_INDEX] = 0;
-$version = AppletInstance::getValue('version', null);
-
-/* Get current instance	 */
-$dial_whom_selector = AppletInstance::getValue('dial-whom-selector');
-$dial_whom_user_or_group = AppletInstance::getUserGroupPickerValue('dial-whom-user-or-group');
-$dial_whom_number = AppletInstance::getValue('dial-whom-number');
-
-
-$no_answer_action = AppletInstance::getValue('no-answer-action', 'hangup');
-$no_answer_group_voicemail = AppletInstance::getAudioSpeechPickerValue('no-answer-group-voicemail');
-$no_answer_redirect = AppletInstance::getDropZoneUrl('no-answer-redirect');
-$no_answer_redirect_number = AppletInstance::getDropZoneUrl('no-answer-redirect-number');
-
-$numbers = array();
-$voicemail = null;
-
-if ($dial_whom_selector === 'user-or-group')
-{
-	$dial_whom_instance = null;
-	if(is_object($dial_whom_user_or_group))
-	{
-		$dial_whom_instance = get_class($dial_whom_user_or_group);
-	}
-
-	switch($dial_whom_instance)
-	{
-		case 'VBX_User':
-			foreach($dial_whom_user_or_group->devices as $device)
-			{
-				if($device->is_active == 1)
-					$numbers[] = $device->value;
-			}
-			$voicemail = $dial_whom_user_or_group->voicemail;
+/**
+ * Respond based on state
+ * 
+ * **NOTE** dialing is done purely on a sequential basis for now.
+ * Due to a limitation in Twilio Client we cannot do simulring.
+ * If ANY device picks up a call Client stops ringing.
+ * 
+ * The flow is as follows:
+ * - Single User: Sequentially dial devices. If user is online
+ *   then the first device will be Client.
+ * - Group: Sequentially dial each user's 1st device. If user
+ *   is online Client will be the first device.
+ * - Number: The number will be dialed.
+ */ 
+try {
+	switch ($dialer->state) {
+		case 'voicemail':
+			$dialer->noanswer();
 			break;
-		case 'VBX_Group':
-			foreach($dial_whom_user_or_group->users as $user)
-			{
-				$user = VBX_User::get($user->user_id);
-				foreach($user->devices as $device)
-				{
-					if($device->is_active == 1)
-						$numbers[] = $device->value;
-				}
-			}
-			$voicemail = $no_answer_group_voicemail;
+		case 'hangup':
+			$dialer->hangup();
+			break;
+		case 'recording':
+			$dialer->add_voice_message();
 			break;
 		default:
-			$response->addSay('Missing user or group to dial');
+			if ($dialer->dial_whom_selector === 'user-or-group') 
+			{
+				// create a dial list from the input state
+				$dial_list = DialList::get($dialer->dial_whom_user_or_group);
+
+				while (count($dial_list)) 
+				{
+					$to_dial = $dial_list->next();
+					if ($to_dial instanceof VBX_Device) 
+					{
+						$dialed = $dialer->dial($to_dial);
+					}
+				}
+	
+				if (!$dialed) 
+				{
+					// nobody to call, push directly to voicemail
+					$dialer->noanswer();
+				}
+			}
+			elseif ($dialer->dial_whom_selector === 'number')
+			{
+				$dialer->dial($dialer->dial_whom_number);
+			}
 			break;
 	}
 }
-else if ($dial_whom_selector === 'number')
-{
-	$numbers[] = $dial_whom_number;
-	$voicemail = null;
-}
-else
-{
-	error_log("Unexpected dial-whom-selector value of '$dial_whom_selector'");
+catch (Exception $e) {
+	error_log('Dial Applet exception: '.$e->getMessage());
+	$dialer->response->say("We're sorry, an error occurred while dialing. Goodbye.");
+	$dialer->hangup();
 }
 
-/* Grab current state of applet */
-if(isset($_COOKIE[DIAL_COOKIE]))
-{
-	$stateString = str_replace(', $Version=0', '', $_COOKIE[DIAL_COOKIE]);
-	$state = json_decode($stateString, true);
-	if(is_object($state)) 
-	{
-		$state = get_object_vars($state);
-	}
-}
-
-
-$dial_status = isset($_REQUEST['DialStatus'])? $_REQUEST['DialStatus'] : null;
-if($dial_status)
-{
-	switch($dial_status)
-	{
-		case 'answered':
-			$state[DIAL_ACTION] = DIAL_STATE_HANGUP;
-			break;
-		default:
-			break;
-	}
-}
-
-// This loop exists only so that we can quickly make state transitions by
-// setting a new DIAL_ACTION and jumping to the top of the loop.
-
-$keepLooping = true;
-while($keepLooping)
-{
-	// By default we'll only go once through the loop.
-	$keepLooping = false;
-	switch($state[DIAL_ACTION])
-	{
-		case DIAL_STATE_DIAL:
-			error_log('numbers left to try');
-			if ($state[DIAL_NUMBER_INDEX] < count($numbers))
-			{
-				// There are still more numbers left to try
-			
-				$dial = $response->addDial(array('action' => current_url()));
-
-				if ($dial_whom_selector === 'user-or-group')
-				{
-					$name = null;
-
-					if ($dial_whom_user_or_group instanceof VBX_User)
-					{
-						$name = $dial_whom_user_or_group->first_name . " " . $dial_whom_user_or_group->last_name;
-					}
-					else if ($dial_whom_user_or_group instanceof VBX_Group)
-					{
-						$name = $dial_whom_user_or_group->name;
-					}
-					else
-					{
-						// In practice, this should never ever happen.
-						$name = "Unknown";
-					}
-					
-					$dial->addNumber($numbers[$state[DIAL_NUMBER_INDEX]],
-									 array(
-										   'url' => site_url('twiml/whisper?name='.urlencode($name)),
-										   )
-									 );
-				}
-				else
-				{
-					// If we're just dialing an arbitrary number, we don't announce anything about
-					// who's calling because we don't really know anything.
-					$dial->addNumber($numbers[$state[DIAL_NUMBER_INDEX]]);
-				}
-
-				$state[DIAL_NUMBER_INDEX] = $state[DIAL_NUMBER_INDEX] + 1;
-			}
-			else
-			{
-				// We've dialed all the phone numbers and gotten no answer
-				$state[DIAL_ACTION] = DIAL_STATE_NO_ANSWER;
-				
-				// Note that we'd like to go through the machine again with our new state
-				$keepLooping = true;
-			}
-			break;
-		case DIAL_STATE_HANGUP:
-			$response->addHangup();
-			break;
-		case DIAL_STATE_NO_ANSWER:
-			if ($dial_whom_selector == 'number')
-			{
-				if(empty($no_answer_redirect_number))
-				{
-					$response->addHangup();
-				}
-				
-				$response->addRedirect($no_answer_redirect_number);
-			}
-			else
-			{
-				if ($no_answer_action === 'voicemail')
-				{
-					$response->append(AudioSpeechPickerWidget::getVerbForValue($voicemail, new Say("Please leave a message.")));
-					$response->addRecord(array(
-											   'transcribeCallback' => site_url('twiml/transcribe'),
-											   ));
-					$state[DIAL_ACTION] = DIAL_STATE_RECORDING;
-				}
-				else if ($no_answer_action === 'redirect')
-				{
-					if(empty($no_answer_redirect))
-					{
-						$response->addHangup();
-					}
-				
-					$response->addRedirect($no_answer_redirect);
-				}
-				else if ($no_answer_action === 'hangup')
-				{
-					$response->addHangup();
-				}
-				else
-				{
-					trigger_error("Unexpected no_answer_action");
-				}
-			}
-			break;
-		case DIAL_STATE_RECORDING:
-			if(isset($_REQUEST['testing']))
-			   break;
-			OpenVBX::addVoiceMessage(
-									 $dial_whom_user_or_group,
-									 $_REQUEST['CallGuid'],
-									 $_REQUEST['Caller'],
-									 $_REQUEST['Called'],
-									 $_REQUEST['RecordingUrl'],
-									 $_REQUEST['Duration']
-									 );
-			break;
-	}
-}
-
-setcookie(DIAL_COOKIE, json_encode($state), time() + (5 * 60));
-$response->Respond();
-?>
+$dialer->save_state();
+$dialer->respond();

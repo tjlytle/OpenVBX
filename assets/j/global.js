@@ -18,6 +18,18 @@
  * Contributor(s):
  **/
 
+OpenVBX.error = {
+	trigger: function(message, code) {
+		var error_message = message || 'An unknown error has occurred',
+			error_code = code || '';
+		
+		$('.error-dialog')
+			.find('.error-code').text(error_code).end()
+			.find('.error-message').text(error_message).end()
+			.dialog('open');
+	}
+}
+
 var _st = window.setTimeout;
 
 window.setTimeout = function(fRef, mDelay) {
@@ -110,14 +122,7 @@ function convertTimeToString(time, midnightToday, firstOfTheYear) {
 	}
 }
 
-// global params
-OpenVBX = {home: null, assets: null};
-
 $(document).ready(function() {
-	// set full links to allow for relative paths
-    OpenVBX.home = $('#openvbx-logo a').eq(0).attr('href'); 
-    OpenVBX.assets = $('#openvbx-assets a').eq(0).attr('href');
-
 	$('button').mouseover(function() {
 			$(this).addClass('ui-state-hover');
 		})
@@ -227,14 +232,15 @@ $(document).ready(function() {
 				$(this).siblings('.checked').removeClass('checked');
 			}
 			$(this).addClass('checked');
-			$('label[for=' + this.id + ']').addClass('checked');
+			$('label[for="' + this.id + '"]').addClass('checked');
 		} else if(hasChecked) {
 			$(this).removeClass('checked');
-			$('label[for=' + this.id + ']').removeClass('checked');
+			$('label[for="' + this.id + '"]').removeClass('checked');
 		}
 	});
 
-	$('.error-dialog').dialog({
+	$('.error-dialog').dialog({ 
+		autoOpen: false,
 		bgiframe: true,
 		resizable: false,
 		modal: true,
@@ -269,13 +275,63 @@ $(document).ready(function() {
 
 $(document).ready(function() {
 	if($.browser.msie && $.browser.version < 7.0) {
-		
 		$('.error-dialog').attr('title', 'Unsupported Browser');
 		$('.error-dialog .error-code').text('');
 		$('.error-dialog .error-message')
 			.text('Microsoft Internet Explorer is not currently supported.  It is currently under development and will be supported in the near future.  We recommend you use Mozilla Firefox, Safari, or Chrome at this time');
-	
 		$('.error-dialog').dialog('open');
 	}
 
+
+	$('.shout-out .close').click(function() {
+        $('.shout-out').hide();
+		$.cookie("mobile-app","false", { path: '/'});
+    });
+    
+    $('#client-first-run a.dismiss').live('click', function(e) {
+    	e.preventDefault();
+    	e.stopPropagation();
+    	
+    	var display = $('#client-first-run'),
+    		status = $('#vbx-client-status').hasClass('online');
+    	
+    	$.ajax({
+    		url: OpenVBX.home + '/account/edit',
+    		data: {
+				'settings': {
+    				'online': (status ? 1 : 0).toString()
+				}
+    		},
+    		success: function(response) {
+ 				display.slideUp('3000');
+    		},
+    		type: 'POST',
+    		dataType: 'json'
+    	});
+    });
+
+	var mobileAppCookie = $.cookie("mobile-app");
+	mobileAppCookie == "false" ? $('.shout-out').hide() : $('.shout-out').show();
+	
+	if ($('.vbx-login-form #iEmail').size() > 0) {
+		$('.vbx-login-form #iEmail').focus();
+	}
+	
+	if ($('.login-reset').size() > 0) {
+		$('#iEmail').focus();
+		$("form").validate({
+			rules: {
+				email: {required: true,	minlength: 2}
+			},
+			messages: {
+				email: {required: "E-Mail required",	minlength: "E-Mail too short"}
+			}
+		});
+	};
+	
+	$('#ft a').live('click', function(e) {
+		e.preventDefault();
+		e.stopPropagation();
+		window.open(this.href);
+	});
 });

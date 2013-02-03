@@ -6,7 +6,8 @@ var valUser; // handle to user validator
 var valGroup; // handle to group validator
 
 $(document).ready(function() {
-	dlgInviteUser = $('#dialog-invite-user').dialog({
+	dlgInviteUser = $('#dialog-invite-user').dialog({ 
+		autoOpen: false,
 		width: 640,
 		buttons: {
 			'OK': function() {
@@ -35,28 +36,32 @@ $(document).ready(function() {
 	dialogUserEditOrAddPrototype.clone().attr('id', 'dialog-user-add').appendTo(dialogUserEditOrAddPrototype.parent());
 	
 	$('#dialog-user-add').attr('title', 'Add User');
-	$('#dialog-user-add').dialog({
+	$('#dialog-user-add').dialog({ 
+		autoOpen: false,
 		width: 640,
 		buttons: {
 			'Add': function() { 
 				var dialog = $(this);
 				var params = $('#dialog-user-add').values();
-				$('button', dialog).attr('disabled', 'disabled');
+				$('button', dialog).prop('disabled', true);
 				$.postJSON('accounts/user/save', params, function(data) {
 					// either update the old one or make a new one
 					if (typeof data == 'object') {
 						if (data.error == false) {
 							dialog.dialog('close');
 							buildUserBlock(data);
-							$('#dialog-user-add input[type=text]').val('');
-							$('#dialog-user-add input[type=checkbox]').removeAttr('checked');
+							$('#dialog-user-add input[type="text"]').val('');
+							$('#dialog-user-add input[type="checkbox"]').prop('checked', false);
 							$('.error-message', dialog).hide();
-							$(document).trigger('user-added', [data])
+							$(document).trigger('user-added', [data]);
+							if (window.parent.Client) {
+								window.parent.Client.ui.refreshUsers();
+							}
 						} else {
 							$('.error-message', dialog).html(data.message.replace(/\n/g, '<br />')).show();
 						}
 					}
-					$('button', dialog).removeAttr('disabled');
+					$('button', dialog).prop('disabled', false);
 				});
 			},
 			Cancel: function() { 
@@ -66,7 +71,8 @@ $(document).ready(function() {
 	});
 	
 	$('#dialog-user-edit').attr('title', 'Edit User');
-	$('#dialog-user-edit').dialog({
+	$('#dialog-user-edit').dialog({ 
+		autoOpen: false,
 		width: 640,
 		buttons: {
 			'OK': function() { hideUserEdit(true); },
@@ -74,7 +80,8 @@ $(document).ready(function() {
 		}
 	});
 
-	$('#dialog-group-edit').dialog({
+	$('#dialog-group-edit').dialog({ 
+		autoOpen: false,
 		width: 350,
 		buttons: {
 			'OK': function() { hideGroupEdit(true); },
@@ -82,13 +89,14 @@ $(document).ready(function() {
 		}
 	});
 
-	$('#dialog-delete').dialog({
+	$('#dialog-delete').dialog({ 
+		autoOpen: false,
 		width: 480,
 		buttons: {
 			'OK': function() {
 				var entity = $('.pending-deletion');
 				var method = entity.hasClass('group') 
-					? 'accounts/group/delete' : 'accounts/user/delete';
+					? '/accounts/group/delete' : '/accounts/user/delete';
 				var params = { id: entity.attr('rel') };
 
 				$.ajax({
@@ -98,6 +106,9 @@ $(document).ready(function() {
 					type : 'POST',
 					success : function(data) {
 						entity.fadeRemove();
+						if (window.parent.Client) {
+							window.parent.Client.ui.refreshUsers();
+						}
 					}
 				});
 				
@@ -168,7 +179,9 @@ $(document).ready(function() {
 						} else {
 							$('.screen .message').append(data.email+' already exists, not modified.<br />');
 						}
-
+						if (window.parent.Client) {
+							window.parent.Client.ui.refreshUsers();
+						}
 					}
 					syncedUsers += 1;
 				},
@@ -252,7 +265,8 @@ $(document).ready(function() {
 			});
 	};
 	
-	dlgGoogleAppSync = $('#dialog-google-app-sync').dialog({
+	dlgGoogleAppSync = $('#dialog-google-app-sync').dialog({ 
+		autoOpen: false,
 		width: 480,
 		buttons: {
 			'OK' : initGoogleAppSync,
@@ -276,7 +290,8 @@ $(document).ready(function() {
 		dlgGoogleAppSync.dialog('open');
 	});
 
-	$('.user-edit, .group-edit').livequery('click', function(event) {
+	// $('.user-edit, .group-edit').livequery('click', function(event) {
+	$('.group-edit').livequery('click', function(event) {
 		var container_el = $(this).closest('.group, .user');
 		if(container_el.hasClass('group')) {
 			$.postJSON('accounts/group/get', {	id: container_el.attr('rel') }, showGroupEdit);
@@ -355,7 +370,6 @@ $(document).ready(function() {
 			}
 		}
 	});
-
 });
 
 function addGroupEvents(el) {
@@ -370,19 +384,22 @@ function addGroupEvents(el) {
 			var group_el = $(this);
 			var user_id = ui.draggable.closest('.user').attr('rel');
 
-			if(!group_el.is(':has(li[rel=' + user_id + '])')) {
+			if(!group_el.is(':has(li[rel="' + user_id + '"])')) {
 				$('.ui-draggable-dragging').hide();
 
 				var username = ui.draggable.find('.user-name').text();
 				var groupname = group_el.find('.group-name').text();
-
-				params = { group_id: group_el.attr('rel'), user_id: user_id };
+			
+				params = { 
+					group_id: group_el.attr('rel'), 
+					user_id: user_id
+				};
 
 				$('.group-counter', group_el).hide();
 				$('.group-counter-loader', group_el).show();
 
 				$.ajax({
-					url : 'accounts/group_user/add',
+					url : OpenVBX.home + '/accounts/group_user/add',
 					data : params, 
 					success : function(data) {
 						if (!data.error) {
@@ -399,7 +416,55 @@ function addGroupEvents(el) {
 				});
 			}
 		}
-	});
+	})
+	.find('.members').sortable({
+		axis: 'y',
+		containment: 'parent',
+		items: 'li',
+		opacity: 0.5,
+		revert: true,
+		tolerance: 'pointer',
+		placeholder: 'members-ui-draggable-placeholder',
+		update: function(event, ui) {
+			var group_el = $(ui.item[0]).closest('.group'),
+				groupname = group_el.find('.group-name').text(),
+				group_id = group_el.attr('rel'),
+				members = $(ui.item[0]).closest('.members');
+			
+			// we're not quite working how sortable tends to work
+			// so we need to gather the user_ids ourselves
+			var order = [];
+			members.find('li').each(function(i) {
+						order.push($(this).attr('rel'));
+					});
+			
+			if (order.length) {
+				members.sortable('disable');
+				$('.group-counter', group_el).hide();
+				$('.group-counter-loader', group_el).show();
+				
+				$.post(
+					OpenVBX.home + '/accounts/group/order',
+					{
+						group_id: group_el.attr('rel'),
+						group_order: order
+					},
+					function(data) {
+						if (data.success) {
+							$.notify(groupname + ' group order updated');
+						}
+						else {
+							$.notify(groupname + ' group could not be updated: ' + data.message);
+						}
+						members.sortable('enable');
+						$('.group-counter', group_el).show();
+						$('.group-counter-loader', group_el).hide();
+					},
+					'json'
+				);
+			}
+		}
+	}).disableSelection();
 }
 
 function addUserEvents(el) {
@@ -458,7 +523,7 @@ function addGroupUserEvents(el) {
 function showUserAdd(data) {
 	var dialog = $('#dialog-user-add');
 	
-	$('input[type=text]', dialog)
+	$('input[type="text"]', dialog)
 		.val('')
 		.first().focus();
 		
@@ -476,7 +541,7 @@ function showUserAdd(data) {
 function showUserEdit(data) {
 	var dialog = $('#dialog-user-edit');
 
-	$('input[type=hidden]', dialog).val('');
+	$('input[type="hidden"]', dialog).val('');
 	$('form', dialog)[0].reset();
 	$('.error-message', dialog).hide();
 
@@ -488,8 +553,8 @@ function showUserEdit(data) {
 		$('.multiple-existing-numbers', dialog).hide();
 		
 		if (data.devices.length == 1) {
-			$('.single-existing-number input[name=device_number]', dialog).val(data.devices[0].value);
-			$('.single-existing-number input[name=device_id]', dialog).val(data.devices[0].id);
+			$('.single-existing-number input[name="device_number"]', dialog).val(data.devices[0].value);
+			$('.single-existing-number input[name="device_id"]', dialog).val(data.devices[0].id);
 		}
 	}
 	
@@ -499,9 +564,9 @@ function showUserEdit(data) {
 }
 
 function buildUserBlock(data) {
-	var user_el = $('.user[rel=' + data.id + ']');
+	var user_el = $('.user[rel="' + data.id + '"]');
 	if (user_el.length < 1) {
-		user_el = $('.user[rel=prototype]').clone().attr('rel', data.id);
+		user_el = $('.user[rel="prototype"]').clone().attr('rel', data.id);
 		user_el.appendTo('#user-container ul.user-list').fadeIn();
 		addUserEvents(user_el);
 	}
@@ -509,13 +574,13 @@ function buildUserBlock(data) {
 
 	$('.user-name', user_el).text(fullName);
 	$('.user-email', user_el).text(data.email);
-	$('.members li[rel=' + data.id + '] span').text(fullName);
+	$('.members li[rel="' + data.id + '"] span').text(fullName);
 }
 
 function buildGroupBlock(data) {
-	var group_el = $('.group[rel=' + data.id + ']');
+	var group_el = $('.group[rel="' + data.id + '"]');
 	if (group_el.length < 1) {
-		group_el = $('.group[rel=prototype]').clone();
+		group_el = $('.group[rel="prototype"]').clone();
 		group_el.attr('rel', data.id);
 		group_el.appendTo('#group-container ul.group-list');
 		group_el.fadeIn();
@@ -541,6 +606,9 @@ function hideUserEdit(save) {
 					$('.error-message', dlgUser).html(data.message.replace(/\n/g, '<br />')).show();
 				}
 			}
+			if (window.parent.Client) {
+				window.parent.Client.ui.refreshUsers();
+			}
 		});
 	} else {
 		dlgUser.dialog('close');
@@ -549,12 +617,11 @@ function hideUserEdit(save) {
 
 function showGroupEdit(data) {
 	var isEdit = (typeof data == 'object' && data != false && data != null);
-	$('#dialog-group-edit').attr("title",
-								 isEdit ? 'Edit Group' : 'Add New Group');
+	$('#dialog-group-edit').dialog({'title': isEdit ? 'Edit Group' : 'Add New Group'});
 	// set the class of the dialog based on edit
 	$($('#dialog-group-edit')).closest('.ui-dialog').addClass(isEdit ? 'manage' : 'add').removeClass(isEdit ? 'add' : 'manage');
 
-	$('input[type=hidden]', $('#dialog-group-edit')).val('');
+	$('input[type="hidden"]', $('#dialog-group-edit')).val('');
 	$('form', $('#dialog-group-edit')).get(0).reset();
 
 

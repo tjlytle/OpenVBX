@@ -4,7 +4,7 @@
  *  Version 1.1 (the "License"); you may not use this file except in
  *  compliance with the License. You may obtain a copy of the License at
  *  http://www.mozilla.org/MPL/
- 
+
  *  Software distributed under the License is distributed on an "AS IS"
  *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
  *  License for the specific language governing rights and limitations
@@ -30,98 +30,137 @@ class Upgrade extends User_Controller {
 		parent::__construct();
 		$this->section = 'upgrade';
 		$this->admin_only($this->section);
+		
+		// no cache
+		$ci =& get_instance();
+		$ci->cache->flush();
+		$ci->cache->enabled(false);
 	}
-	
+
 	public function index()
 	{
 		$currentSchemaVersion = OpenVBX::schemaVersion();
 		$upgradingToSchemaVersion = OpenVBX::getLatestSchemaVersion();
 		if($currentSchemaVersion == $upgradingToSchemaVersion)
+		{
 			redirect('/');
+		}
 		
-		$this->load->view('upgrade/main');
+		$plugins = Plugin::all();
+		foreach($plugins as $plugin)
+		{
+			$data['plugins'][] = $plugin->getInfo();
+		}
+
+		$data['php_version_min'] = MIN_PHP_VERSION;
+		$data['php_version'] = phpversion();
+		if (!version_compare($data['php_version'], $data['php_version_min'], '>=')) 
+		{
+			$data['error'] = $this->load->view('upgrade/min-php-req-notice', $data, true);
+		}
+		$this->load->view('upgrade/main', $data);
 	}
 
+	/**
+	 * There's no validation done during upgrade
+	 * This method is not necessarily deprecated, just unused... 
+	 * Reserving the right to use it in the future.
+	 *
+	 * @return void
+	 */
 	public function validate()
 	{
 		$step = $this->input->post('step');
 		$json = array('success' => true);
-		if($step == 1) {
-			echo json_encode($json);
-			return;
-		}
-		
-		$tplvars = $this->input_args();
-		switch($step)
-		{
-			case 2:
-				$json = $this->validate_step2();
-				break;
-		}
-		
-		$json['tplvars'] = $tplvars;
 		echo json_encode($json);
 	}
 
 	private function input_args()
 	{
 		$tplvars = array();
-
 		return $tplvars;
 	}
-	
+
 	public function setup()
-	{
+	{		
 		$json['success'] = true;
 		$json['message'] = '';
-		
+
 		try
 		{
 			$currentSchemaVersion = OpenVBX::schemaVersion();
 			$upgradingToSchemaVersion = OpenVBX::getLatestSchemaVersion();
 
-			$sqlPath = VBX_ROOT.'/sql-updates/';
-			$updates = scandir($sqlPath);
-			$files = array();
+			$upgradeScriptPath = VBX_ROOT.'/updates/';
+			$updates = scandir($upgradeScriptPath);
+			$updatesToRun = array();
+			// Collect all files named numerically in /updates and key sort the list of updates
 			foreach($updates as $i => $update)
 			{
-				if(preg_match('/^(\d+).sql$/', $update) )
+				if(preg_match('/^(\d+).(sql|php)$/', $update, $matches) )
 				{
-					$rev = intval(str_replace('.sql', '', $update));
-					$files[$rev] = $update;
+					$updateExtension = $matches[2];
+					$rev = $matches[1];
+					$updatesToRun[$rev] = array( 
+						'type' => $updateExtension,
+						'filename' => $update,
+						'revision' => $rev,
+					);
 				}
 			}
 
-			ksort($files);
-			$files = array_slice($files, $currentSchemaVersion);
-			$tplvars = array('originalVersion' => $currentSchemaVersion,
-							 'version' => $upgradingToSchemaVersion,
-							 'updates' => $files );
-			
-			foreach($files as $file)
+			ksort($updatesToRun);
+
+			// Cut the updates by the current schema version.
+			$updatesToRun = array_slice($updatesToRun, $currentSchemaVersion);
+			$tplvars = array(
+				'originalVersion' => $currentSchemaVersion,
+				'version' => $upgradingToSchemaVersion,
+				'updates' => $updatesToRun
+			);
+
+			foreach($updatesToRun as $updateToRun)
 			{
-				$sql = @file_get_contents($sqlPath.$file);
-				if(empty($sql))
+				$file = $updateToRun['filename'];
+				$type = $updateToRun['type'];
+				$revision = $updateToRun['revision'];
+				switch($type) 
 				{
-					throw new UpgradeException("Unable to read update: $file", 1);
-				}
-
-				foreach(explode(";", $sql) as $stmt)
-				{
-					$stmt = trim($stmt);
-					if(!empty($stmt))
-					{
-						PluginData::sqlQuery($stmt);
-					}
+					case 'php':
+						require_once($upgradeScriptPath.$file);
+						$runUpdateMethod = "runUpdate_$revision";
+						if(!function_exists($runUpdateMethod))
+						{
+							throw(new UpgradeException('runUpdate method missing from '.
+														$file.': '.$runUpdateMethod));
+						}
+						call_user_func($runUpdateMethod);
+						break;
+					case 'sql':
+						$sql = @file_get_contents($upgradeScriptPath.$file);
+						if(empty($sql))
+						{
+							throw new UpgradeException("Unable to read update: $file", 1);
+						}
+						foreach(explode(";", $sql) as $stmt)
+						{
+							$stmt = trim($stmt);
+							if(!empty($stmt))
+							{
+								PluginData::sqlQuery($stmt);
+							}
+						}
+						break;
 				}
 			}
-			
-		} catch(Exception $e) {
+			flush_minify_caches();
+		} 
+		catch(Exception $e) {
 			$json['success'] = false;
 			$json['message'] = $e->getMessage();
 			$json['step'] = $e->getCode();
 		}
-			  
+
 		$json['tplvars'] = $tplvars;
 		echo json_encode($json);
 	}

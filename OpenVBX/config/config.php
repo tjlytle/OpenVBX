@@ -2,6 +2,14 @@
 
 /*
 |--------------------------------------------------------------------------
+| Server Name
+|--------------------------------------------------------------------------
+*/
+// @TODO: xss protection
+$config['server_name'] = $_SERVER['HTTP_HOST'];
+
+/*
+|--------------------------------------------------------------------------
 | Base Site URL
 |--------------------------------------------------------------------------
 |
@@ -11,23 +19,18 @@
 |	http://example.com/
 |
 */
-$config['base_url']= "http"
-	  . ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != 'off')? 's' : '')
-	  . "://" . $_SERVER['HTTP_HOST']
-	  . preg_replace('@/+$@','',
-					 str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']))
-					 )
-	  . '/';
+$config['base_url']= "http".((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] != 'off')? 's' : '')
+	  				 ."://".$config['server_name']. rtrim(WEB_ROOT, '/').'/';
 
 /*
 |--------------------------------------------------------------------------
 | Site Revision Number
 |--------------------------------------------------------------------------
 |
-| Used for js versioning.
+| Used for asset url versioning.
 |
 */
-$config['site_rev'] = 1004;
+$config['site_rev'] = 1023;
 
 /*
 |--------------------------------------------------------------------------
@@ -83,6 +86,16 @@ $config['display_errors'] = FALSE;
 
 /*
 |--------------------------------------------------------------------------
+| Display PHP Errors
+|--------------------------------------------------------------------------
+|
+| Log PHP errors.
+|
+*/
+$config['log_errors'] = TRUE;
+
+/*
+|--------------------------------------------------------------------------
 | Enable Profiler
 |--------------------------------------------------------------------------
 |
@@ -119,13 +132,17 @@ $config['index_page'] = 'index.php';
 | 'ORIG_PATH_INFO'	Uses the ORIG_PATH_INFO
 |
 */
-if(isset($_REQUEST['vbxsite'])) {
+if(isset($_REQUEST['vbxsite'])) 
+{
 	/* For mod_rewrite  */
 	$config['uri_protocol'] = 'REQUEST_URI';
-} else {
+} 
+else 
+{
 	/* For non mod_rewrite users - experimental */
 	$config['uri_protocol']	= "PATH_INFO";
 }
+
 /*
 |--------------------------------------------------------------------------
 | URL suffix
@@ -256,7 +273,7 @@ $config['directory_trigger'] 	= 'd'; // experimental not currently in use
 | your log files will fill up very fast.
 |
 */
-$config['log_threshold'] = 0;
+$config['log_threshold'] = 1;
 
 /*
 |--------------------------------------------------------------------------
@@ -333,10 +350,12 @@ $config['sess_time_to_update'] 	= 300;
 |
 */
 $config['cookie_prefix']	= "";
-$config['cookie_domain']	= ($_SERVER['SERVER_NAME'] == 'localhost')? '' : $_SERVER['SERVER_NAME'];
-$config['cookie_path']		= str_replace('\\', '/', preg_replace('@/+$@','',dirname($_SERVER['SCRIPT_NAME'])));
+$config['cookie_domain']	= parse_url($config['base_url'], PHP_URL_HOST);
+$config['cookie_path']		= WEB_ROOT;
 if(empty($config['cookie_path']))
+{
 	$config['cookie_path'] = '/';
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -408,6 +427,32 @@ $config['rewrite_short_tags'] = FALSE;
 */
 $config['proxy_ips'] = '';
 
+
+/*
+|--------------------------------------------------------------------------
+| Use Twilio API Certificate
+|--------------------------------------------------------------------------
+|
+| Curl certificates on some systems are either incomplete or out of date and
+| this can effect connectivity to the Twilio API. If you're getting an error
+| "error:14090086:SSL routines:SSL3_GET_SERVER_CERTIFICATE:certificate verify 
+| failed (0)" then set the option below to true.
+|
+*/
+$config['twilio_use_certificate'] = false;
+
+/*
+|--------------------------------------------------------------------------
+| Local config overrides
+|--------------------------------------------------------------------------
+|
+| Sometimes your local environment just needs some things to be overridden
+|
+*/
+if (is_file(APPPATH.'config/config-local.php')) 
+{
+	include_once(APPPATH.'config/config-local.php');
+}
 
 /* End of file config.php */
 /* Location: ./system/application/config/config.php */

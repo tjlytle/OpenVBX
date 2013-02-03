@@ -1,16 +1,16 @@
 <?php
 $defaultNumberOfChoices = 2;
-$keys = AppletInstance::getValue('keys[]', array('1','2') );
-$choices = AppletInstance::getValue('choices[]');
+$keys = (array) AppletInstance::getValue('keys[]', array('1','2') );
+$choices = (array) AppletInstance::getValue('choices[]');
 ?>
 
 <div class="vbx-applet menu-applet">
 
 		<h2>Menu Prompt</h2>
 		<p>When the caller reaches this menu they will hear:</p>
-        <div class="menu-prompt">
-            <?php echo AppletUI::audioSpeechPicker('prompt'); ?>
-        </div>
+		<div class="menu-prompt">
+			<?php echo AppletUI::audioSpeechPicker('prompt'); ?>
+		</div>
 		<br />
 		<h2>Menu Options</h2>
 		<table class="vbx-menu-grid options-table">
@@ -39,11 +39,11 @@ $choices = AppletInstance::getValue('choices[]');
 				</tr>
 			</tfoot>
 			<tbody>
-				<?php foreach($keys as $i=>$key): ?>
+				<?php foreach($keys as $i => $key): ?>
 				<tr>
 					<td>
 						<fieldset class="vbx-input-container">
-							<input class="keypress tiny" type="text" name="keys[]" value="<?php echo $key ?>" autocomplete="off" />
+							<input class="keypress tiny" type="text" name="keys[<?php echo $key; ?>]" value="<?php echo $key ?>" autocomplete="off" />
 						</fieldset>
 					</td>
 					<td>then</td>
@@ -78,6 +78,6 @@ $choices = AppletInstance::getValue('choices[]');
 		<h3>Oops! The caller didn't enter something right.</h3>
 		<p>Customize a specific message about the invalid option.</p>
 		<?php echo AppletUI::audioSpeechPicker('invalid-option'); ?>
-    	<br />
+		<br />
 		
 </div><!-- .vbx-applet -->

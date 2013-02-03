@@ -68,29 +68,105 @@ class AudioSpeechPickerWidget extends AppletUIWidget
 		// find for the current user that is active.
 		$ci = &get_instance();
 
-		$first_phone_number = $ci->db
-			->where('user_id', $ci->session->userdata('user_id'))
-			->where('is_active', 1)
-			->from('numbers')
-			->order_by('sequence')
-			->limit(1)
-			->get()->result();
+		$user = VBX_User::get($ci->session->userdata('user_id'));
+		$user_phone = '';
+		if (count($user->devices)) 
+		{
+			foreach ($user->devices as $device)
+			{
+				if ($device->is_active)
+				{
+					$user_phone = format_phone($device->value);
+					break;
+				}
+			}
+		}
+
+		// set the caller id for recording via the phone
+		$caller_id = '';
+		$ci->load->model('vbx_incoming_numbers');
+		try
+		{
+			$numbers = $ci->vbx_incoming_numbers->get_numbers();
+			foreach ($numbers as $number)
+			{
+				// find the first number that has voice enabled
+				// yes, this is a rather paranoid check
+				if (isset($number->capabilities->voice) && $number->capabilities->voice > 0)
+				{
+					$caller_id = normalize_phone_to_E164($number->phone);
+					break;
+				}
+			}
+		}
+		catch(VBX_IncomingNumberException $e)
+		{
+			// fail silently, for better or worse
+			error_log($e->getMessage());
+		}
 
 		$data = array_merge(array(
-					'name' => $this->name,
-					'hasValue' => $hasValue,
-					'mode' => $this->mode,
-					'say' => $this->say_value,
-					'play' => $this->play_value,
-					'tag' => $this->tag,
-					'library' => $results,
-					'first_device_phone_number' => (count($first_phone_number) == 0 ? "" : format_phone($first_phone_number[0]->value))
-				), $data);
+			'name' => $this->name,
+			'hasValue' => $hasValue,
+			'mode' => $this->mode,
+			'say' => $this->say_value,
+			'play' => $this->play_value,
+			'tag' => $this->tag,
+			'library' => $results,
+			'first_device_phone_number' => $user_phone,
+			'caller_id' => $caller_id
+		), $data);
 		return parent::render($data);
 	}
 	
+	/**
+	 * Set the proper verb for the pickers value
+	 * 
+	 * @example 
+	 * 		$response = new Services_Twilio_Twiml;
+	 * 		AudioSpeechPickerWidget::setVerbForValue($value, $response);
+	 *
+	 * @param string $value
+	 * @param object $response Services_Twilio_Twiml
+	 * @return mixed Services_Twilio_Twiml on success, boolean false on fail
+	 */
+	public static function setVerbForValue($value, $response) {
+		$matches = array();
+		if (empty($value) || !($response instanceof Services_Twilio_Twiml))
+		{
+			return false;
+		}
+		else if (preg_match('/^vbx-audio-upload:\/\/(.*)/i', $value, $matches))
+		{
+			// This is a locally hosted file, and we need to return the correct absolute URL for the file.
+			return $response->play(asset_url('audio-uploads/'.$matches[1]));
+		}
+		else if (preg_match('/^http(s)?:\/\/(.*)/i', $value))
+		{
+			// it's already an absolute URL
+			return $response->play($value);
+		}
+		else
+		{
+			$ci =& get_instance();
+			return $response->say($value, array(
+					'voice' => $ci->vbx_settings->get('voice', $ci->tenant->id),
+					'language' => $ci->vbx_settings->get('voice_language', $ci->tenant->id)
+				));
+		}		
+	}
+	
+	/**
+	 * Create the proper verb for the Picker's value
+	 *
+	 * @deprecated use AudioSpeechPickerWidget::setVerbForValue instead
+	 * @param mixed $value 
+	 * @param object $defaultVerb 
+	 * @return object subclass of Verb
+	 */
 	public static function getVerbForValue($value, $defaultVerb)
 	{
+		_deprecated_notice(__METHOD__, '1.0.4', 'AudioSpeechPickerWidget::setVerbForValue');
 		$matches = array();
 
 		if (empty($value))
@@ -101,7 +177,7 @@ class AudioSpeechPickerWidget extends AppletUIWidget
 		{
 			// This is a locally hosted file, and we need to return the correct
 			// absolute URL for the file.
-			return new Play(real_site_url("audio-uploads/" . $matches[1]));
+			return new Play(asset_url("audio-uploads/" . $matches[1]));
 		}
 		else if (preg_match('/^http(s)?:\/\/(.*)/i', $value))
 		{

@@ -1,11 +1,9 @@
 # Requirements
 -----------------------------
  * Web Server
- * PHP 5.2+
+ * PHP 5.2.3+
  * MySQL 5+
  * Twilio Account
- * If using less than PHP 5.2
-   requires http://pear.php.net/package/Services_JSON
 
 # Install
 -----------------------------
@@ -16,17 +14,28 @@ Please see [INSTALL.markdown](https://github.com/twilio/OpenVBX/blob/master/INST
 Report issues to:
 https://github.com/twilio/openvbx/issues
 
-Title: A brief description of the story
-Body: 
-1. A full summary of the problem.
-2. Steps to reproduce
+Title: A brief description of the story  
+Body:  
+
+1. A full summary of the problem.  
+2. Steps to reproduce  
 3. Possible solution (optional)
 
+For a list of common/known issues see the  [Troubleshooting Guide/Common Issues Page](https://github.com/twilio/OpenVBX/wiki/OpenVBX-Troubleshooting---Common-Issues)
+
+# Trademarks
+-----------------------------
+"OpenVBX" and "Twilio" are trademarks of Twilio, Inc., all rights 
+reserved. If you want to say something like "Powered by Twilio" or 
+"Powered by OpenVBX" we'd be honored. If you want to redistribute 
+OpenVBX or the iPhone app, you must come up with your own product name. 
+Use of the Twilio trademarks in your product name requires Twilio's 
+written permission.
 
 # More Information
 -----------------------------
-Visit http://openvbx.org
-Pickles and gravy.
+Visit http://openvbx.org  
+Pineapple and gravy.
 
 
 Please remember that your use of OpenVBX in connection with the Twilio 

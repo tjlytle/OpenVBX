@@ -89,7 +89,7 @@ function short_url($string, $max_len = 30)
 
 function random_str($length = 10) {
 	$chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    
+	
 	$str = '';
 	for($a = 0; $a < $length; $a++)
 	{
@@ -200,12 +200,12 @@ function format_name_as_initials($user)
 	{
 		$initials = "";
 		
-		if (!empty($user->first_name))
+		if ($user->first_name != '')
 		{
 			$initials .= substr($user->first_name, 0, 1);
 		}
 		
-		if (!empty($user->last_name))
+		if ($user->last_name != '')
 		{
 			$initials .= substr($user->last_name, 0, 1);
 		}
@@ -233,7 +233,7 @@ function html($data)
 {
 	if(is_string($data))
 	{
-		return htmlspecialchars($data);
+		return htmlspecialchars($data, ENT_COMPAT, 'UTF-8', false);
 	}
 
 	if(is_array($data))
@@ -242,7 +242,7 @@ function html($data)
 		{
 			if(is_string($val))
 			{
-				$data[$key] = htmlspecialchars($val);
+				$data[$key] = htmlspecialchars($val, ENT_COMPAT, 'UTF-8', false);
 			}
 			else if(is_array($val))
 			{
